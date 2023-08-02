@@ -12,6 +12,7 @@ mod preview;
 mod server;
 pub mod subsidy;
 pub mod supply;
+mod teleburn;
 pub mod traits;
 pub mod transfer;
 pub mod wallet;
@@ -48,6 +49,8 @@ pub(crate) enum Subcommand {
   Server(server::Server),
   #[clap(about = "Display Bitcoin supply information")]
   Supply,
+  #[clap(about = "Generate an Ethereum/Solana teleburn address")]
+  Teleburn(teleburn::Teleburn),
   #[clap(about = "Display satoshi traits")]
   Traits(traits::Traits),
   #[clap(about = "Modify transfer log table")]
@@ -76,6 +79,7 @@ impl Subcommand {
         server.run(options, index, handle)
       }
       Self::Supply => supply::run(),
+      Self::Teleburn(teleburn) => teleburn.run(),
       Self::Traits(traits) => traits.run(),
       Self::Transfer(transfer) => transfer.run(options),
       Self::Wallet(wallet) => wallet.run(options),
