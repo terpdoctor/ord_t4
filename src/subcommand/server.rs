@@ -776,6 +776,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     Path(DeserializeFromStr(rune)): Path<DeserializeFromStr<Rune>>,
   ) -> ServerResult<PageHtml<RuneHtml>> {
+    log::info!("GET /rune/{rune}");
     let (id, entry) = index.rune(rune)?.ok_or_else(|| {
       ServerError::NotFound(
         "tracking runes requires index created with `--index-runes-pre-alpha-i-agree-to-get-rekt` flag".into(),
@@ -796,6 +797,7 @@ impl Server {
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
   ) -> ServerResult<PageHtml<RunesHtml>> {
+    log::info!("GET /runes");
     Ok(
       RunesHtml {
         entries: index.runes()?,
@@ -999,6 +1001,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     Path(inscription_id): Path<InscriptionId>,
   ) -> ServerResult<Json<String>> {
+    log::info!("GET /r/metadata/{inscription_id}");
     let metadata = index
       .get_inscription_by_id(inscription_id)?
       .ok_or_not_found(|| format!("inscription {inscription_id}"))?
@@ -1210,6 +1213,7 @@ impl Server {
   }
 
   async fn block_hash_json(Extension(index): Extension<Arc<Index>>) -> ServerResult<Json<String>> {
+    log::info!("GET /r/blockhash");
     Ok(Json(
       index
         .block_hash(None)?
@@ -1235,6 +1239,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     Path(height): Path<u64>,
   ) -> ServerResult<Json<String>> {
+    log::info!("GET /r/blockhash/{height}");
     Ok(Json(
       index
         .block_hash(Some(height))?
@@ -1543,6 +1548,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     Path((parent, page)): Path<(InscriptionId, usize)>,
   ) -> ServerResult<Response> {
+    log::info!("GET /children/{parent}/{page}");
     let parent_number = index
       .get_inscription_entry(parent)?
       .ok_or_not_found(|| format!("inscription {parent}"))?
