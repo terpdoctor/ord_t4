@@ -63,6 +63,7 @@ impl Preview {
 
     super::wallet::Wallet::Create(super::wallet::create::Create {
       passphrase: "".into(),
+      address_type: super::wallet::AddressType::Bech32m,
     })
     .run(options.clone())?;
 
@@ -81,6 +82,8 @@ impl Preview {
           super::wallet::inscribe::Inscribe {
             batch: None,
             cbor_metadata: None,
+            utxo: Vec::new(),
+            coin_control: false,
             commit_fee_rate: None,
             destination: None,
             dry_run: false,

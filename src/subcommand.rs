@@ -1,5 +1,6 @@
 use super::*;
 
+pub mod children;
 pub mod decode;
 pub mod epochs;
 pub mod find;
@@ -13,10 +14,13 @@ pub mod subsidy;
 pub mod supply;
 pub mod teleburn;
 pub mod traits;
+pub mod transfer;
 pub mod wallet;
 
 #[derive(Debug, Parser)]
 pub(crate) enum Subcommand {
+  #[command(about = "List all the child inscriptions")]
+  Children(children::Children),
   #[command(about = "Decode a transaction")]
   Decode(decode::Decode),
   #[command(about = "List the first satoshis of each reward epoch")]
@@ -43,6 +47,8 @@ pub(crate) enum Subcommand {
   Teleburn(teleburn::Teleburn),
   #[command(about = "Display satoshi traits")]
   Traits(traits::Traits),
+  #[command(about = "Modify transfer log table")]
+  Transfer(transfer::Transfer),
   #[command(subcommand, about = "Wallet commands")]
   Wallet(wallet::Wallet),
 }
@@ -50,6 +56,7 @@ pub(crate) enum Subcommand {
 impl Subcommand {
   pub(crate) fn run(self, options: Options) -> SubcommandResult {
     match self {
+      Self::Children(children) => children.run(options),
       Self::Decode(decode) => decode.run(),
       Self::Epochs => epochs::run(),
       Self::Find(find) => find.run(options),
@@ -68,6 +75,7 @@ impl Subcommand {
       Self::Supply => supply::run(),
       Self::Teleburn(teleburn) => teleburn.run(),
       Self::Traits(traits) => traits.run(),
+      Self::Transfer(transfer) => transfer.run(options),
       Self::Wallet(wallet) => wallet.run(options),
     }
   }

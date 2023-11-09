@@ -67,6 +67,13 @@ pub(crate) struct Inscribe {
   pub(crate) cbor_metadata: Option<PathBuf>,
   #[arg(
     long,
+    help = "Consider spending outpoint <UTXO>, even if it is unconfirmed or contains inscriptions"
+  )]
+  pub(crate) utxo: Vec<OutPoint>,
+  #[arg(long, help = "Only spend outpoints given with --utxo")]
+  pub(crate) coin_control: bool,
+  #[arg(
+    long,
     help = "Use <COMMIT_FEE_RATE> sats/vbyte for commit transaction.\nDefaults to <FEE_RATE> if unset."
   )]
   pub(crate) commit_fee_rate: Option<FeeRate>,
@@ -113,11 +120,24 @@ impl Inscribe {
     let index = Index::open(&options)?;
     index.update()?;
 
-    let utxos = index.get_unspent_outputs(Wallet::load(&options)?)?;
+    let mut utxos = if self.coin_control {
+      BTreeMap::new()
+    } else {
+      index.get_unspent_outputs(Wallet::load(&options)?)?
+    };
 
     let locked_utxos = index.get_locked_outputs(Wallet::load(&options)?)?;
 
     let client = options.bitcoin_rpc_client_for_wallet_command(false)?;
+
+    for outpoint in &self.utxo {
+      utxos.insert(
+        *outpoint,
+        Amount::from_sat(
+          client.get_raw_transaction(&outpoint.txid, None)?.output[outpoint.vout as usize].value,
+        ),
+      );
+    }
 
     let chain = options.chain();
 
