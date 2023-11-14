@@ -1415,7 +1415,8 @@ impl Index {
     }
   }
 
-  pub(crate) fn get_children(&self) -> Result<()> {
+  pub(crate) fn get_children(&self) -> Result<Vec<(InscriptionId, InscriptionId)>> {
+    let mut result = Vec::new();
     for range in self
       .database
       .begin_read()?
@@ -1423,12 +1424,13 @@ impl Index {
       .iter()?
     {
       let (parent, children) = range?;
+      let parent = <InscriptionId as Entry>::load(*parent.value());
       for child in children {
-        println!("{} {}", <InscriptionId as Entry>::load(*parent.value()), <InscriptionId as Entry>::load(*child?.value()));
+        result.push((parent, <InscriptionId as Entry>::load(*child?.value())));
       }
     }
 
-    Ok(())
+    Ok(result)
   }
 
   pub(crate) fn get_stats(&self) -> Result<(Option<u64>, Option<i64>, Option<i64>)> {

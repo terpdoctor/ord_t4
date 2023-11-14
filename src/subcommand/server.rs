@@ -255,6 +255,7 @@ impl Server {
         .route("/feed.xml", get(Self::feed))
         .route("/input/:block/:transaction/:input", get(Self::input))
         .route("/inscription/:inscription_query", get(Self::inscription))
+        .route("/children", get(Self::children_all))
         .route("/children/:inscription_id", get(Self::children))
         .route(
           "/children/:inscription_id/:page",
@@ -495,6 +496,15 @@ impl Server {
 
   fn index_height(index: &Index) -> ServerResult<Height> {
     index.block_height()?.ok_or_not_found(|| "genesis block")
+  }
+
+  async fn children_all(Extension(index): Extension<Arc<Index>>) -> ServerResult<String> {
+    log::info!("GET /children");
+    let mut result = String::new();
+    for (parent, child) in index.get_children()? {
+      result += format!("{} {}", parent, child).as_str();
+    }
+    Ok(result)
   }
 
   async fn clock(Extension(index): Extension<Arc<Index>>) -> ServerResult<Response> {
