@@ -68,6 +68,7 @@ impl<'index> Updater<'_> {
       )?;
 
     let mut progress_bar = if cfg!(test)
+      || self.index.no_progress_bar
       || log_enabled!(log::Level::Info)
       || starting_height <= self.height
       || integration_test()
@@ -82,6 +83,9 @@ impl<'index> Updater<'_> {
       Some(progress_bar)
     };
 
+    if starting_height > self.height
+      && (self.index.height_limit.is_none() || self.index.height_limit.unwrap() > self.height)
+    {
     let rx = Self::fetch_blocks_from(self.index, self.height, self.index.index_sats)?;
 
     let (mut outpoint_sender, mut value_receiver) = Self::spawn_fetcher(self.index)?;
@@ -152,6 +156,7 @@ impl<'index> Updater<'_> {
     if let Some(progress_bar) = &mut progress_bar {
       progress_bar.finish_and_clear();
     }
+  }
 
     Ok(())
   }
@@ -377,6 +382,7 @@ impl<'index> Updater<'_> {
     }
 
     let mut height_to_block_hash = wtx.open_table(HEIGHT_TO_BLOCK_HASH)?;
+    let mut height_to_inscription_id = wtx.open_multimap_table(HEIGHT_TO_INSCRIPTION_ID)?;
     let mut height_to_last_sequence_number = wtx.open_table(HEIGHT_TO_LAST_SEQUENCE_NUMBER)?;
     let mut inscription_id_to_inscription_entry =
       wtx.open_table(INSCRIPTION_ID_TO_INSCRIPTION_ENTRY)?;
@@ -413,6 +419,7 @@ impl<'index> Updater<'_> {
     {
       let mut inscription_updater = InscriptionUpdater::new(
         self.height,
+        &mut height_to_inscription_id,
         &mut inscription_id_to_children,
         &mut inscription_id_to_satpoint,
         value_receiver,

@@ -22,7 +22,7 @@ use {
     headers::UserAgent,
     http::{header, HeaderMap, HeaderValue, StatusCode, Uri},
     response::{IntoResponse, Redirect, Response},
-    routing::get,
+    routing::{get, post},
     Router, TypedHeader,
   },
   axum_server::Handle,
@@ -33,7 +33,8 @@ use {
     caches::DirCache,
     AcmeConfig,
   },
-  std::{cmp::Ordering, str, sync::Arc},
+  std::{cmp::Ordering, collections::HashMap, str, sync::Arc},
+  tokio::time::sleep,
   tokio_stream::StreamExt,
   tower_http::{
     compression::CompressionLayer,
@@ -48,6 +49,18 @@ mod error;
 #[derive(Clone)]
 pub struct ServerConfig {
   pub is_json_api_enabled: bool,
+}
+
+#[derive(Serialize)]
+pub struct Outputs {
+  pub output: OutPoint,
+  pub details: OutputJson,
+}
+
+#[derive(Serialize)]
+pub struct Ranges {
+  pub output: OutPoint,
+  pub ranges: Vec<(u64, u64)>,
 }
 
 enum InscriptionQuery {
@@ -93,6 +106,50 @@ enum SpawnConfig {
 #[derive(Deserialize)]
 struct Search {
   query: String,
+}
+
+#[derive(Serialize)]
+struct MyInscriptionJson {
+  number: i64,
+  id: InscriptionId,
+  parent: Option<InscriptionId>,
+  address: Option<String>,
+  output_value: Option<u64>,
+  sat: Option<SatoshiJson>,
+  content_length: Option<usize>,
+  content_type: String,
+  timestamp: u32,
+  genesis_height: u64,
+  genesis_fee: u64,
+  genesis_transaction: Txid,
+  location: String,
+  output: String,
+  offset: u64,
+  children: Vec<InscriptionId>,
+}
+
+#[derive(Serialize)]
+struct SatoshiJson {
+  number: u64,
+  decimal: String,
+  degree: String,
+  percentile: String,
+  name: String,
+  cycle: u64,
+  epoch: u64,
+  period: u64,
+  block: u64,
+  offset: u64,
+  rarity: Rarity,
+  // timestamp: i64,
+}
+
+#[derive(Serialize)]
+struct StatsJson {
+  version: String,
+  highest_block_indexed: Option<u64>,
+  lowest_inscription_number: Option<i64>,
+  highest_inscription_number: Option<i64>,
 }
 
 #[derive(RustEmbed)]
@@ -199,6 +256,7 @@ impl Server {
         .route("/feed.xml", get(Self::feed))
         .route("/input/:block/:transaction/:input", get(Self::input))
         .route("/inscription/:inscription_query", get(Self::inscription))
+        .route("/children", get(Self::children_all))
         .route("/children/:inscription_id", get(Self::children))
         .route(
           "/children/:inscription_id/:page",
@@ -215,9 +273,18 @@ impl Server {
           "/inscriptions/block/:height/:page",
           get(Self::inscriptions_in_block_from_page),
         )
+        .route(
+          "/inscriptions_json/:start",
+          get(Self::inscriptions_json_start),
+        )
+        .route(
+          "/inscriptions_json/:start/:end",
+          get(Self::inscriptions_json_start_end),
+        )
         .route("/install.sh", get(Self::install_script))
         .route("/ordinal/:sat", get(Self::ordinal))
         .route("/output/:output", get(Self::output))
+        .route("/outputs", post(Self::outputs))
         .route("/preview/:inscription_id", get(Self::preview))
         .route("/r/blockhash", get(Self::block_hash_json))
         .route(
@@ -228,6 +295,7 @@ impl Server {
         .route("/r/blocktime", get(Self::block_time))
         .route("/r/metadata/:inscription_id", get(Self::metadata))
         .route("/range/:start/:end", get(Self::range))
+        .route("/ranges", post(Self::ranges))
         .route("/rare.txt", get(Self::rare_txt))
         .route("/rune/:rune", get(Self::rune))
         .route("/runes", get(Self::runes))
@@ -235,7 +303,11 @@ impl Server {
         .route("/search", get(Self::search_by_query))
         .route("/search/*query", get(Self::search_by_path))
         .route("/static/*path", get(Self::static_asset))
+        .route("/stats", get(Self::stats))
         .route("/status", get(Self::status))
+        .route("/transfers/:height", get(Self::inscriptionids_from_height))
+        .route("/transfers/:height/:start", get(Self::inscriptionids_from_height_start))
+        .route("/transfers/:height/:start/:end", get(Self::inscriptionids_from_height_start_end))
         .route("/tx/:txid", get(Self::transaction))
         .layer(Extension(index))
         .layer(Extension(page_config))
@@ -427,7 +499,17 @@ impl Server {
     index.block_height()?.ok_or_not_found(|| "genesis block")
   }
 
+  async fn children_all(Extension(index): Extension<Arc<Index>>) -> ServerResult<String> {
+    log::info!("GET /children");
+    let mut result = String::new();
+    for (parent, child) in index.get_children()? {
+      result += format!("{} {}", parent, child).as_str();
+    }
+    Ok(result)
+  }
+
   async fn clock(Extension(index): Extension<Arc<Index>>) -> ServerResult<Response> {
+    log::info!("GET /clock");
     Ok(
       (
         [(
@@ -446,6 +528,7 @@ impl Server {
     Path(DeserializeFromStr(sat)): Path<DeserializeFromStr<Sat>>,
     accept_json: AcceptJson,
   ) -> ServerResult<Response> {
+    log::info!("GET /sat/{sat}");
     let inscriptions = index.get_inscription_ids_by_sat(sat)?;
     let satpoint = index.rare_sat_satpoint(sat)?.or_else(|| {
       inscriptions.first().and_then(|&first_inscription_id| {
@@ -487,6 +570,7 @@ impl Server {
   }
 
   async fn ordinal(Path(sat): Path<String>) -> Redirect {
+    log::info!("GET /ordinal/{sat}");
     Redirect::to(&format!("/sat/{sat}"))
   }
 
@@ -496,6 +580,7 @@ impl Server {
     Path(outpoint): Path<OutPoint>,
     accept_json: AcceptJson,
   ) -> ServerResult<Response> {
+    log::info!("GET /output/{outpoint}");
     let list = index.list(outpoint)?;
 
     let output = if outpoint == OutPoint::null() || outpoint == unbound_outpoint() {
@@ -552,6 +637,80 @@ impl Server {
     })
   }
 
+  async fn outputs(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Json(data): Json<serde_json::Value>
+  ) -> ServerResult<Response> {
+    log::info!("POST /outputs");
+
+    if !data.is_array() {
+      return Err(ServerError::BadRequest("expected array".to_string()));
+    }
+
+    let mut result = Vec::new();
+
+    for outpoint in data.as_array().unwrap() {
+      if !outpoint.is_string() {
+        return Err(ServerError::BadRequest("expected array of strings".to_string()));
+      }
+
+      match OutPoint::from_str(outpoint.as_str().unwrap()) {
+        Ok(outpoint) => {
+          sleep(Duration::from_millis(0)).await;
+
+          let list = index.list(outpoint)?;
+
+          let output = if outpoint == OutPoint::null() || outpoint == unbound_outpoint() {
+            let mut value = 0;
+
+            if let Some(List::Unspent(ranges)) = &list {
+              for (start, end) in ranges {
+                value += end - start;
+              }
+            }
+
+            TxOut {
+              value,
+              script_pubkey: ScriptBuf::new(),
+            }
+          } else {
+            index
+              .get_transaction(outpoint.txid)?
+              .ok_or_not_found(|| format!("output {outpoint}"))?
+              .output
+              .into_iter()
+              .nth(outpoint.vout as usize)
+              .ok_or_not_found(|| format!("output {outpoint}"))?
+          };
+
+          let inscriptions = index.get_inscriptions_on_output(outpoint)?;
+
+          let runes = index.get_rune_balances_for_outpoint(outpoint)?;
+
+          result.push(
+            Outputs {output: outpoint, details: 
+            OutputJson::new(
+              outpoint,
+              list,
+              page_config.chain,
+              output,
+              inscriptions,
+              runes
+                .into_iter()
+                .map(|(rune, pile)| (rune, pile.amount))
+                .collect(),
+            )
+            }
+          )
+        }
+        _ => return Err(ServerError::BadRequest(format!("expected array of OutPoint strings ({} is bad)", outpoint))),
+      }
+    }
+
+    Ok(Json(result).into_response())
+  }
+
   async fn range(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Path((DeserializeFromStr(start), DeserializeFromStr(end))): Path<(
@@ -559,6 +718,7 @@ impl Server {
       DeserializeFromStr<Sat>,
     )>,
   ) -> ServerResult<PageHtml<RangeHtml>> {
+    log::info!("GET /range/{start}/{end}");
     match start.cmp(&end) {
       Ordering::Equal => Err(ServerError::BadRequest("empty range".to_string())),
       Ordering::Greater => Err(ServerError::BadRequest(
@@ -568,7 +728,57 @@ impl Server {
     }
   }
 
+  async fn ranges(
+    Extension(index): Extension<Arc<Index>>,
+    Json(data): Json<serde_json::Value>
+  ) -> ServerResult<Response> {
+    log::info!("POST /ranges");
+
+    if !index.has_sat_index() {
+      return Err(ServerError::BadRequest("the /ranges endpoint needs the server to have a sat index".to_string()));
+    }
+
+    if !data.is_array() {
+      return Err(ServerError::BadRequest("expected array".to_string()));
+    }
+
+    let mut result = Vec::new();
+    let mut range_count = 0;
+    let mut outpoint_count = 0;
+    let start_time = Instant::now();
+
+    for outpoint in data.as_array().unwrap() {
+      if start_time.elapsed() > Duration::from_secs(5) {
+        return Err(ServerError::BadRequest("request timed out".to_string()));
+      }
+
+      if !outpoint.is_string() {
+        return Err(ServerError::BadRequest("expected array of strings".to_string()));
+      }
+
+      match OutPoint::from_str(outpoint.as_str().unwrap()) {
+        Ok(outpoint) => {
+          sleep(Duration::from_millis(0)).await;
+          match index.ranges(outpoint) {
+            Ok(ranges) => {
+              range_count += ranges.len();
+              outpoint_count += 1;
+              result.push(Ranges {output: outpoint, ranges});
+            }
+            _ => println!("no ranges for {}", outpoint),
+          }
+        }
+        _ => return Err(ServerError::BadRequest(format!("expected array of OutPoint strings ({} is bad)", outpoint))),
+      }
+    }
+
+    println!("  {} ranges from {} outputs in {:?}", range_count, outpoint_count, start_time.elapsed());
+
+    Ok(Json(result).into_response())
+  }
+
   async fn rare_txt(Extension(index): Extension<Arc<Index>>) -> ServerResult<RareTxt> {
+    log::info!("GET /rare.txt");
     Ok(RareTxt(index.rare_sat_satpoints()?))
   }
 
@@ -577,6 +787,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     Path(DeserializeFromStr(rune)): Path<DeserializeFromStr<Rune>>,
   ) -> ServerResult<PageHtml<RuneHtml>> {
+    log::info!("GET /rune/{rune}");
     let (id, entry) = index.rune(rune)?.ok_or_else(|| {
       ServerError::NotFound(
         "tracking runes requires index created with `--index-runes-pre-alpha-i-agree-to-get-rekt` flag".into(),
@@ -597,6 +808,7 @@ impl Server {
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
   ) -> ServerResult<PageHtml<RunesHtml>> {
+    log::info!("GET /runes");
     Ok(
       RunesHtml {
         entries: index.runes()?,
@@ -609,6 +821,7 @@ impl Server {
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
   ) -> ServerResult<PageHtml<HomeHtml>> {
+    log::info!("GET /");
     let blocks = index.blocks(100)?;
     let mut featured_blocks = BTreeMap::new();
     for (height, hash) in blocks.iter().take(5) {
@@ -622,6 +835,7 @@ impl Server {
   }
 
   async fn install_script() -> Redirect {
+    log::info!("GET /install.sh");
     Redirect::to("https://raw.githubusercontent.com/ordinals/ord/master/install.sh")
   }
 
@@ -633,6 +847,7 @@ impl Server {
   ) -> ServerResult<Response> {
     let (block, height) = match query {
       BlockQuery::Height(height) => {
+        log::info!("GET /block/{height}/");
         let block = index
           .get_block_by_height(height)?
           .ok_or_not_found(|| format!("block {height}"))?;
@@ -640,6 +855,7 @@ impl Server {
         (block, height)
       }
       BlockQuery::Hash(hash) => {
+        log::info!("GET /block/{hash}/");
         let info = index
           .block_header_info(hash)?
           .ok_or_not_found(|| format!("block {hash}"))?;
@@ -676,11 +892,104 @@ impl Server {
     })
   }
 
+  async fn inscriptionids_from_height(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(height): Path<u64>,
+  ) -> ServerResult<String> {
+    log::info!("GET /transfers/{height}");
+    Self::inscriptionids_from_height_inner(page_config, index.clone(), index.get_inscription_ids_by_height(height)?).await
+  }
+
+  async fn inscriptionids_from_height_start(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(path): Path<(u64, usize)>,
+  ) -> ServerResult<String> {
+    let height = path.0;
+    let start = path.1;
+    log::info!("GET /transfers/{height}/{start}");
+
+    let inscription_ids = index.get_inscription_ids_by_height(height)?;
+    let end = inscription_ids.len();
+
+    match start.cmp(&end) {
+      Ordering::Equal => Err(ServerError::BadRequest("range length == 0".to_string())),
+      Ordering::Greater => Err(ServerError::BadRequest("range length < 0".to_string())),
+      Ordering::Less => {
+        Self::inscriptionids_from_height_inner(page_config, index.clone(), inscription_ids[start..end].to_vec()).await
+      }
+    }
+  }
+
+  async fn inscriptionids_from_height_start_end(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(path): Path<(u64, usize, usize)>,
+  ) -> ServerResult<String> {
+    let height = path.0;
+    let start = path.1;
+    let mut end = path.2;
+    log::info!("GET /transfers/{height}/{start}/{end}");
+
+    let inscription_ids = index.get_inscription_ids_by_height(height)?;
+    end = usize::min(end, inscription_ids.len());
+
+    match start.cmp(&end) {
+      Ordering::Equal => Err(ServerError::BadRequest("range length == 0".to_string())),
+      Ordering::Greater => Err(ServerError::BadRequest("range length < 0".to_string())),
+      Ordering::Less => {
+        Self::inscriptionids_from_height_inner(page_config, index.clone(), inscription_ids[start..end].to_vec()).await
+      }
+    }
+  }
+
+  async fn inscriptionids_from_height_inner(
+    page_config: Arc<PageConfig>,
+    index: Arc<Index>,
+    inscription_ids: Vec<InscriptionId>,
+  ) -> ServerResult<String> {
+    let mut ret = String::from("");
+    let mut tx_cache = HashMap::new();
+    for inscription_id in inscription_ids {
+      sleep(Duration::from_millis(0)).await;
+      let satpoint = index
+        .get_inscription_satpoint_by_id(inscription_id)?
+        .ok_or_not_found(|| format!("inscription {inscription_id}"))?;
+      let address = if satpoint.outpoint == unbound_outpoint() {
+        String::from("unbound")
+      } else {
+        if !tx_cache.contains_key(&satpoint.outpoint.txid) {
+          tx_cache.insert(satpoint.outpoint.txid,
+                          index
+                          .get_transaction(satpoint.outpoint.txid)?
+                          .ok_or_not_found(|| format!("inscription {inscription_id} current transaction"))?);
+        }
+        
+        let output = tx_cache.get(&satpoint.outpoint.txid).unwrap().clone()
+          .output
+          .into_iter()
+          .nth(satpoint.outpoint.vout.try_into().unwrap())
+          .ok_or_not_found(|| format!("inscription {inscription_id} current transaction output"))?;
+        if let Ok(address) = page_config.chain.address_from_script(&output.script_pubkey) {
+          address.to_string()
+        } else {
+          String::from("error")
+        }
+      };
+
+      ret += &format!("{} {}\n", inscription_id, address);
+    }
+
+    Ok(ret)
+  }
+
   async fn transaction(
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
     Path(txid): Path<Txid>,
   ) -> ServerResult<PageHtml<TransactionHtml>> {
+    log::info!("GET /tx/{txid}");
     let inscription = index.get_inscription_by_id(InscriptionId { txid, index: 0 })?;
 
     let blockhash = index.get_transaction_blockhash(txid)?;
@@ -703,6 +1012,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     Path(inscription_id): Path<InscriptionId>,
   ) -> ServerResult<Json<String>> {
+    log::info!("GET /r/metadata/{inscription_id}");
     let metadata = index
       .get_inscription_by_id(inscription_id)?
       .ok_or_not_found(|| format!("inscription {inscription_id}"))?
@@ -712,7 +1022,23 @@ impl Server {
     Ok(Json(hex::encode(metadata)))
   }
 
+  async fn stats(Extension(index): Extension<Arc<Index>>) -> ServerResult<String> {
+    log::info!("GET /stats");
+    let stats = index.get_stats()?;
+    Ok(
+      serde_json::to_string_pretty(&StatsJson {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        highest_block_indexed: stats.0,
+        lowest_inscription_number: stats.1,
+        highest_inscription_number: stats.2,
+      })
+      .ok()
+      .unwrap(),
+    )
+  }
+
   async fn status(Extension(index): Extension<Arc<Index>>) -> (StatusCode, &'static str) {
+    log::info!("GET /status");
     if index.is_unrecoverably_reorged() {
       (
         StatusCode::OK,
@@ -730,6 +1056,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     Query(search): Query<Search>,
   ) -> ServerResult<Redirect> {
+    log::info!("GET /search");
     Self::search(&index, &search.query).await
   }
 
@@ -737,6 +1064,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     Path(search): Path<Search>,
   ) -> ServerResult<Redirect> {
+    log::info!("GET /search/{}", search.query);
     Self::search(&index, &search.query).await
   }
 
@@ -781,6 +1109,7 @@ impl Server {
   }
 
   async fn favicon(user_agent: Option<TypedHeader<UserAgent>>) -> ServerResult<Response> {
+    log::info!("GET /favicon.ico");
     if user_agent
       .map(|user_agent| {
         user_agent.as_str().contains("Safari/")
@@ -812,6 +1141,7 @@ impl Server {
     Extension(page_config): Extension<Arc<PageConfig>>,
     Extension(index): Extension<Arc<Index>>,
   ) -> ServerResult<Response> {
+    log::info!("GET /feed.xml");
     let mut builder = rss::ChannelBuilder::default();
 
     let chain = page_config.chain;
@@ -852,8 +1182,10 @@ impl Server {
 
   async fn static_asset(Path(path): Path<String>) -> ServerResult<Response> {
     let content = StaticAssets::get(if let Some(stripped) = path.strip_prefix('/') {
+      log::info!("GET /static/{stripped}");
       stripped
     } else {
+      log::info!("GET /static/{path}");
       &path
     })
     .ok_or_not_found(|| format!("asset {path}"))?;
@@ -868,10 +1200,12 @@ impl Server {
   }
 
   async fn block_count(Extension(index): Extension<Arc<Index>>) -> ServerResult<String> {
+    log::info!("GET /blockcount");
     Ok(index.block_count()?.to_string())
   }
 
   async fn block_height(Extension(index): Extension<Arc<Index>>) -> ServerResult<String> {
+    log::info!("GET /blockheight");
     Ok(
       index
         .block_height()?
@@ -881,6 +1215,7 @@ impl Server {
   }
 
   async fn block_hash(Extension(index): Extension<Arc<Index>>) -> ServerResult<String> {
+    log::info!("GET /blockhash");
     Ok(
       index
         .block_hash(None)?
@@ -890,6 +1225,7 @@ impl Server {
   }
 
   async fn block_hash_json(Extension(index): Extension<Arc<Index>>) -> ServerResult<Json<String>> {
+    log::info!("GET /r/blockhash");
     Ok(Json(
       index
         .block_hash(None)?
@@ -902,6 +1238,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     Path(height): Path<u64>,
   ) -> ServerResult<String> {
+    log::info!("GET /blockhash/{height}");
     Ok(
       index
         .block_hash(Some(height))?
@@ -914,6 +1251,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     Path(height): Path<u64>,
   ) -> ServerResult<Json<String>> {
+    log::info!("GET /r/blockhash/{height}");
     Ok(Json(
       index
         .block_hash(Some(height))?
@@ -923,6 +1261,7 @@ impl Server {
   }
 
   async fn block_time(Extension(index): Extension<Arc<Index>>) -> ServerResult<String> {
+    log::info!("GET /blocktime");
     Ok(
       index
         .block_time(index.block_height()?.ok_or_not_found(|| "blocktime")?)?
@@ -936,6 +1275,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     Path(path): Path<(u64, usize, usize)>,
   ) -> Result<PageHtml<InputHtml>, ServerError> {
+    log::info!("GET /input/{}/{}/{}", path.0, path.1, path.2);
     let not_found = || format!("input /{}/{}/{}", path.0, path.1, path.2);
 
     let block = index
@@ -958,10 +1298,12 @@ impl Server {
   }
 
   async fn faq() -> Redirect {
+    log::info!("GET /faq");
     Redirect::to("https://docs.ordinals.com/faq/")
   }
 
   async fn bounties() -> Redirect {
+    log::info!("GET /bounties");
     Redirect::to("https://docs.ordinals.com/bounty/")
   }
 
@@ -970,6 +1312,7 @@ impl Server {
     Extension(config): Extension<Arc<Config>>,
     Path(inscription_id): Path<InscriptionId>,
   ) -> ServerResult<Response> {
+    log::info!("GET /content/{inscription_id}");
     if config.is_hidden(inscription_id) {
       return Ok(PreviewUnknownHtml.into_response());
     }
@@ -1016,6 +1359,7 @@ impl Server {
     Extension(config): Extension<Arc<Config>>,
     Path(inscription_id): Path<InscriptionId>,
   ) -> ServerResult<Response> {
+    log::info!("GET /preview/{inscription_id}");
     if config.is_hidden(inscription_id) {
       return Ok(PreviewUnknownHtml.into_response());
     }
@@ -1105,10 +1449,16 @@ impl Server {
     accept_json: AcceptJson,
   ) -> ServerResult<Response> {
     let inscription_id = match query {
-      InscriptionQuery::Id(id) => id,
-      InscriptionQuery::Number(inscription_number) => index
-        .get_inscription_id_by_inscription_number(inscription_number)?
-        .ok_or_not_found(|| format!("{inscription_number}"))?,
+      InscriptionQuery::Id(id) => {
+	log::info!("GET /inscription/{id}");
+	id
+      },
+      InscriptionQuery::Number(inscription_number) => {
+	log::info!("GET /inscription/{inscription_number}");
+	index
+          .get_inscription_id_by_inscription_number(inscription_number)?
+          .ok_or_not_found(|| format!("{inscription_number}"))?
+      },
     };
 
     let entry = index
@@ -1210,6 +1560,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     Path((parent, page)): Path<(InscriptionId, usize)>,
   ) -> ServerResult<Response> {
+    log::info!("GET /children/{parent}/{page}");
     let parent_number = index
       .get_inscription_entry(parent)?
       .ok_or_not_found(|| format!("inscription {parent}"))?
@@ -1240,6 +1591,7 @@ impl Server {
     Extension(index): Extension<Arc<Index>>,
     accept_json: AcceptJson,
   ) -> ServerResult<Response> {
+    log::info!("GET /inscriptions");
     Self::inscriptions_inner(page_config, index, None, 100, accept_json).await
   }
 
@@ -1249,6 +1601,7 @@ impl Server {
     Path(block_height): Path<u64>,
     accept_json: AcceptJson,
   ) -> ServerResult<Response> {
+    log::info!("GET /inscriptions/block/{block_height}");
     Self::inscriptions_in_block_from_page(
       Extension(page_config),
       Extension(index),
@@ -1264,6 +1617,7 @@ impl Server {
     Path((block_height, page)): Path<(u64, usize)>,
     accept_json: AcceptJson,
   ) -> ServerResult<Response> {
+    log::info!("GET /inscriptions/block/{block_height}/{page}");
     let inscriptions = index.get_inscriptions_in_block(block_height)?;
 
     Ok(if accept_json.0 {
@@ -1286,6 +1640,7 @@ impl Server {
     Path(from): Path<u64>,
     accept_json: AcceptJson,
   ) -> ServerResult<Response> {
+    log::info!("GET /inscriptions/{from}");
     Self::inscriptions_inner(page_config, index, Some(from), 100, accept_json).await
   }
 
@@ -1295,6 +1650,7 @@ impl Server {
     Path((from, n)): Path<(u64, usize)>,
     accept_json: AcceptJson,
   ) -> ServerResult<Response> {
+    log::info!("GET /inscriptions/{from}/{n}");
     Self::inscriptions_inner(page_config, index, Some(from), n, accept_json).await
   }
 
@@ -1325,6 +1681,151 @@ impl Server {
       .page(page_config)
       .into_response()
     })
+  }
+
+  async fn inscriptions_json_start(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(start): Path<i64>,
+  ) -> ServerResult<String> {
+    log::info!("GET /inscriptions_json/{start}");
+    Self::inscriptions_json(page_config, index, start, start + 1).await
+  }
+
+  async fn inscriptions_json_start_end(
+    Extension(page_config): Extension<Arc<PageConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(path): Path<(i64, i64)>,
+  ) -> ServerResult<String> {
+    log::info!("GET /inscriptions_json/{}/{}", path.0, path.1);
+    Self::inscriptions_json(page_config, index, path.0, path.1).await
+  }
+
+  async fn inscriptions_json(
+    page_config: Arc<PageConfig>,
+    index: Arc<Index>,
+    start: i64,
+    end: i64,
+  ) -> ServerResult<String> {
+    const MAX_JSON_INSCRIPTIONS: i64 = 1000;
+
+    match start.cmp(&end) {
+      Ordering::Equal => Err(ServerError::BadRequest("range length == 0".to_string())),
+      Ordering::Greater => Err(ServerError::BadRequest("range length < 0".to_string())),
+      Ordering::Less => {
+        if end - start > MAX_JSON_INSCRIPTIONS {
+          return Err(ServerError::BadRequest(format!(
+            "range length > {MAX_JSON_INSCRIPTIONS}"
+          )));
+        }
+
+        let mut ret = Vec::new();
+
+        for i in start..end {
+          sleep(Duration::from_millis(0)).await;
+          match index.get_inscription_id_by_inscription_number(i) {
+            Err(_) => return Err(ServerError::BadRequest(format!("no inscription {i}"))),
+            Ok(inscription_id) => match inscription_id {
+              Some(inscription_id) => {
+                let entry = index
+                  .get_inscription_entry(inscription_id)?
+                  .ok_or_not_found(|| format!("inscription {inscription_id}"))?;
+
+                let tx = index.get_transaction(inscription_id.txid)?.unwrap();
+                let inscription = index
+                  .get_inscription_by_id(inscription_id)?
+                  .ok_or_not_found(|| format!("inscription {inscription_id}"))?;
+
+                let satpoint = index
+                  .get_inscription_satpoint_by_id(inscription_id)?
+                  .ok_or_not_found(|| format!("inscription {inscription_id}"))?;
+
+                let output = if satpoint.outpoint == unbound_outpoint() {
+                  None
+                } else {
+                  Some(
+                    if satpoint.outpoint.txid == inscription_id.txid {
+                      tx
+                    } else {
+                      index
+                        .get_transaction(satpoint.outpoint.txid)?
+                        .ok_or_not_found(|| {
+                          format!("inscription {inscription_id} current transaction")
+                        })?
+                    }
+                    .output
+                    .into_iter()
+                    .nth(satpoint.outpoint.vout.try_into().unwrap())
+                    .ok_or_not_found(|| {
+                      format!("inscription {inscription_id} current transaction output")
+                    })?,
+                  )
+                };
+
+                let mut address = None;
+                if let Some(output) = &output {
+                  if let Ok(a) = page_config.chain.address_from_script(&output.script_pubkey) {
+                    address = Some(a.to_string());
+                  }
+                }
+
+                let sat = entry.sat.map(|s| SatoshiJson {
+                  number: s.n(),
+                  decimal: s.decimal().to_string(),
+                  degree: s.degree().to_string(),
+                  percentile: s.percentile().to_string(),
+                  name: s.name(),
+                  cycle: s.cycle(),
+                  epoch: s.epoch().0,
+                  period: s.period(),
+                  block: s.height().0,
+                  offset: s.third(),
+                  rarity: s.rarity(),
+                  // timestamp: index.block_time(s.height())?.unix_timestamp(),
+                });
+
+                let content_type = inscription.content_type();
+                let unbound_suffix = if satpoint.outpoint == unbound_outpoint() {
+                  " (unbound)"
+                } else {
+                  ""
+                };
+
+                ret.push(MyInscriptionJson {
+                  number: i,
+                  id: inscription_id,
+                  parent: entry.parent,
+                  address,
+                  output_value: if output.is_some() {
+                    Some(output.unwrap().value)
+                  } else {
+                    None
+                  },
+                  sat,
+                  content_length: inscription.content_length(),
+                  content_type: if content_type.is_some() {
+                    content_type.unwrap().to_string()
+                  } else {
+                    "".to_string()
+                  },
+                  timestamp: entry.timestamp,
+                  genesis_height: entry.height,
+                  genesis_fee: entry.fee,
+                  genesis_transaction: inscription_id.txid,
+                  location: satpoint.to_string() + unbound_suffix,
+                  output: satpoint.outpoint.to_string() + unbound_suffix,
+                  offset: satpoint.offset,
+                  children: index.get_children_by_inscription_id(inscription_id)?,
+                });
+              }
+              None => return Err(ServerError::BadRequest(format!("no inscription {i}"))),
+            },
+          }
+        }
+
+        Ok(serde_json::to_string_pretty(&ret).ok().unwrap())
+      }
+    }
   }
 
   async fn redirect_http_to_https(
