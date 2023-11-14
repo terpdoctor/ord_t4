@@ -501,7 +501,7 @@ impl Server {
 
   async fn children_all(Extension(index): Extension<Arc<Index>>) -> ServerResult<String> {
     log::info!("GET /children");
-    let mut result = String::new();
+    let mut result = "parent child\n".to_string();
     for (parent, child) in index.get_children()? {
       result += format!("{} {}\n", parent, child).as_str();
     }
