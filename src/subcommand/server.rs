@@ -503,7 +503,7 @@ impl Server {
     log::info!("GET /children");
     let mut result = String::new();
     for (parent, child) in index.get_children()? {
-      result += format!("{} {}", parent, child).as_str();
+      result += format!("{} {}\n", parent, child).as_str();
     }
     Ok(result)
   }
