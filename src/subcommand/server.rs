@@ -146,6 +146,7 @@ struct SatoshiJson {
 
 #[derive(Serialize)]
 struct StatsJson {
+  version: String,
   highest_block_indexed: Option<u64>,
   lowest_inscription_number: Option<i64>,
   highest_inscription_number: Option<i64>,
@@ -1026,6 +1027,7 @@ impl Server {
     let stats = index.get_stats()?;
     Ok(
       serde_json::to_string_pretty(&StatsJson {
+        version: env!("CARGO_PKG_VERSION").to_string(),
         highest_block_indexed: stats.0,
         lowest_inscription_number: stats.1,
         highest_inscription_number: stats.2,
