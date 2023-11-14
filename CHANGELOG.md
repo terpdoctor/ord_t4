@@ -1,6 +1,17 @@
 Changelog
 =========
 
+[0.11.0-gm2](https://github.com/gmart7t2/ord/releases/tag/0.11.0-gm2) - 2023-11-14
+----------------------------------------------------------------------------------
+
+### Added
+- Add logging for new server endpoints.
+- Add ord version to `/stats` endpoint output.
+
+### Changed
+- Move server debug logging to debug level.
+- Remove `children` subcommand and replace it with `/children` server endpoint.
+
 [0.11.0-gm1](https://github.com/gmart7t2/ord/releases/tag/0.11.0-gm1) - 2023-11-09
 ----------------------------------------------------------------------------------
 
