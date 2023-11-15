@@ -1,6 +1,13 @@
 Changelog
 =========
 
+[0.11.1-gm3](https://github.com/gmart7t2/ord/releases/tag/0.11.1-gm3) - 2023-11-15
+----------------------------------------------------------------------------------
+
+### Added
+Add `--key` flag to `wallet inscribe` to allow using a specific recovery key.
+Add `--ignore-outdated-index` flag to allow ord to run without having to fully index the blockchain. Be careful. Inscriptions that haven't been indexed will be treated as if they are cardinals, and so can be accidentally sent to spent as fees.
+
 [0.11.1-gm2](https://github.com/gmart7t2/ord/releases/tag/0.11.1-gm2) - 2023-11-14
 ----------------------------------------------------------------------------------
 
