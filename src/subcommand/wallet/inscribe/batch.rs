@@ -5,6 +5,7 @@ pub(super) struct Batch {
   pub(super) destinations: Vec<Address>,
   pub(super) dry_run: bool,
   pub(super) inscriptions: Vec<Inscription>,
+  pub(super) key: Option<String>,
   pub(super) mode: Mode,
   pub(super) no_backup: bool,
   pub(super) no_limit: bool,
@@ -22,6 +23,7 @@ impl Default for Batch {
       destinations: Vec::new(),
       dry_run: false,
       inscriptions: Vec::new(),
+      key: None,
       mode: Mode::SharedOutput,
       no_backup: false,
       no_limit: false,
@@ -255,7 +257,13 @@ impl Batch {
     }
 
     let secp256k1 = Secp256k1::new();
-    let key_pair = UntweakedKeyPair::new(&secp256k1, &mut rand::thread_rng());
+    let key_pair = if self.key.is_some() {
+      secp256k1::KeyPair::from_secret_key(&secp256k1, &PrivateKey::from_wif(&self.key.clone().unwrap())?.inner)
+    } else {
+      let key_pair = UntweakedKeyPair::new(&secp256k1, &mut rand::thread_rng());
+      log::info!("random backup key: {}", PrivateKey::new(key_pair.secret_key(), chain.network()).to_wif());
+      key_pair
+    };
     let (public_key, _parity) = XOnlyPublicKey::from_keypair(&key_pair);
 
     let reveal_script = Inscription::append_batch_reveal_script(

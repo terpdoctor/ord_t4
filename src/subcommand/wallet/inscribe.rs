@@ -111,6 +111,8 @@ pub(crate) struct Inscribe {
   pub(crate) reinscribe: bool,
   #[arg(long, help = "Inscribe <SATPOINT>.")]
   pub(crate) satpoint: Option<SatPoint>,
+  #[clap(long, help = "Use provided recovery key instead of a random one.")]
+  pub(crate) key: Option<String>,
 }
 
 impl Inscribe {
@@ -196,6 +198,7 @@ impl Inscribe {
       destinations,
       dry_run: self.dry_run,
       inscriptions,
+      key: self.key,
       mode,
       no_backup: self.no_backup,
       no_limit: self.no_limit,
