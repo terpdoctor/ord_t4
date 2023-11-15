@@ -385,6 +385,7 @@ impl Index {
         ),
       );
     }
+    if !self.options.ignore_outdated_index {
     let rtx = self.database.begin_read()?;
     let outpoint_to_value = rtx.open_table(OUTPOINT_TO_VALUE)?;
     for outpoint in utxos.keys() {
@@ -393,6 +394,7 @@ impl Index {
           "output in Bitcoin Core wallet but not in ord index: {outpoint}"
         ));
       }
+    }
     }
 
     Ok(utxos)

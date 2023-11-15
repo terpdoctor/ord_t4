@@ -44,6 +44,10 @@ impl Send {
 
     let mut unspent_outputs = if self.coin_control {
       BTreeMap::new()
+    } else if options.ignore_outdated_index {
+      return Err(anyhow!(
+        "--ignore-outdated-index only works in conjunction with --coin-control when sending"
+      ));
     } else {
       index.get_unspent_outputs(Wallet::load(&options)?)?
     };

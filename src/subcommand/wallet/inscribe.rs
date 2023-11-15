@@ -124,6 +124,10 @@ impl Inscribe {
 
     let mut utxos = if self.coin_control {
       BTreeMap::new()
+    } else if options.ignore_outdated_index {
+      return Err(anyhow!(
+        "--ignore-outdated-index only works in conjunction with --coin-control when inscribing"
+      ));
     } else {
       index.get_unspent_outputs(Wallet::load(&options)?)?
     };

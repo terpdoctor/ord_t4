@@ -61,8 +61,10 @@ pub(crate) struct Options {
   pub(crate) testnet: bool,
   #[arg(long, default_value = "ord", help = "Use wallet named <WALLET>.")]
   pub(crate) wallet: String,
-  #[arg(long, short, help = "Don't check for standard wallet descriptors.")]
+  #[arg(long, help = "Don't check for standard wallet descriptors.")]
   pub(crate) ignore_descriptors: bool,
+  #[arg(long, help = "Don't fail when the index is out of date. This is dangerous, and results in ord treating inscriptions as cardinals if their corresponding utxos haven't been indexed. Use at your own risk.")]
+  pub(crate) ignore_outdated_index: bool,
 }
 
 impl Options {
