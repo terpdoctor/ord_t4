@@ -98,6 +98,8 @@ impl Preview {
             reinscribe: false,
             satpoint: None,
             key: None,
+            dump: false,
+            no_broadcast: false,
           },
         )),
       }

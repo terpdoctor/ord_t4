@@ -3,11 +3,13 @@ use super::*;
 pub(super) struct Batch {
   pub(super) commit_fee_rate: FeeRate,
   pub(super) destinations: Vec<Address>,
+  pub(super) dump: bool,
   pub(super) dry_run: bool,
   pub(super) inscriptions: Vec<Inscription>,
   pub(super) key: Option<String>,
   pub(super) mode: Mode,
   pub(super) no_backup: bool,
+  pub(super) no_broadcast: bool,
   pub(super) no_limit: bool,
   pub(super) parent_info: Option<ParentInfo>,
   pub(super) postage: Amount,
@@ -21,11 +23,13 @@ impl Default for Batch {
     Batch {
       commit_fee_rate: 1.0.try_into().unwrap(),
       destinations: Vec::new(),
+      dump: false,
       dry_run: false,
       inscriptions: Vec::new(),
       key: None,
       mode: Mode::SharedOutput,
       no_backup: false,
+      no_broadcast: false,
       no_limit: false,
       parent_info: None,
       postage: Amount::from_sat(10_000),
@@ -65,6 +69,9 @@ impl Batch {
       return Ok(Box::new(self.output(
         commit_tx.txid(),
         reveal_tx.txid(),
+        None,
+        None,
+        None,
         total_fees,
         self.inscriptions.clone(),
       )));
@@ -103,6 +110,10 @@ impl Batch {
       Self::backup_recovery_key(client, recovery_key_pair, chain.network())?;
     }
 
+    let (commit, reveal) = if self.no_broadcast {
+      (client.decode_raw_transaction(&signed_commit_tx, None)?.txid,
+       client.decode_raw_transaction(&signed_reveal_tx, None)?.txid)
+    } else {
     let commit = client.send_raw_transaction(&signed_commit_tx)?;
 
     let reveal = match client.send_raw_transaction(&signed_reveal_tx) {
@@ -114,9 +125,15 @@ impl Batch {
       }
     };
 
+    (commit, reveal)
+    };
+
     Ok(Box::new(self.output(
       commit,
       reveal,
+      if self.dump { Some(signed_commit_tx.raw_hex()) } else { None },
+      if self.dump { Some(signed_reveal_tx.raw_hex()) } else { None },
+      if self.dump { Some(Self::get_recovery_key(&client, recovery_key_pair, chain.network())?.to_string()) } else { None },
       total_fees,
       self.inscriptions.clone(),
     )))
@@ -126,6 +143,9 @@ impl Batch {
     &self,
     commit: Txid,
     reveal: Txid,
+    commit_hex: Option<String>,
+    reveal_hex: Option<String>,
+    recovery_descriptor: Option<String>,
     total_fees: u64,
     inscriptions: Vec<Inscription>,
   ) -> super::Output {
@@ -169,7 +189,10 @@ impl Batch {
 
     super::Output {
       commit,
+      commit_hex,
       reveal,
+      reveal_hex,
+      recovery_descriptor,
       total_fees,
       parent: self.parent_info.clone().map(|info| info.id),
       inscriptions: inscriptions_output,
@@ -439,6 +462,22 @@ impl Batch {
       Self::calculate_fee(&unsigned_commit_tx, &utxos) + Self::calculate_fee(&reveal_tx, &utxos);
 
     Ok((unsigned_commit_tx, reveal_tx, recovery_key_pair, total_fees))
+  }
+
+  fn get_recovery_key(
+    client: &Client,
+    recovery_key_pair: TweakedKeyPair,
+    network: Network,
+  ) -> Result<String> {
+    let recovery_private_key =
+      PrivateKey::new(recovery_key_pair.to_inner().secret_key(), network).to_wif();
+    Ok(format!(
+      "rawtr({})#{}",
+      recovery_private_key,
+      client
+        .get_descriptor_info(&format!("rawtr({})", recovery_private_key))?
+        .checksum
+    ))
   }
 
   fn backup_recovery_key(

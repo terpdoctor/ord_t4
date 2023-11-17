@@ -16,6 +16,7 @@ use {
   },
   bitcoincore_rpc::bitcoincore_rpc_json::{ImportDescriptors, SignRawTransactionInput, Timestamp},
   bitcoincore_rpc::Client,
+  bitcoincore_rpc::RawTx,
   std::collections::BTreeSet,
 };
 
@@ -30,9 +31,16 @@ pub struct InscriptionInfo {
 #[derive(Serialize, Deserialize)]
 pub struct Output {
   pub commit: Txid,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub commit_hex: Option<String>,
   pub inscriptions: Vec<InscriptionInfo>,
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub parent: Option<InscriptionId>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub recovery_descriptor: Option<String>,
   pub reveal: Txid,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub reveal_hex: Option<String>,
   pub total_fees: u64,
 }
 
@@ -113,11 +121,20 @@ pub(crate) struct Inscribe {
   pub(crate) satpoint: Option<SatPoint>,
   #[clap(long, help = "Use provided recovery key instead of a random one.")]
   pub(crate) key: Option<String>,
+  #[clap(long, help = "Dump raw hex transactions and recovery keys to standard output.")]
+  pub(crate) dump: bool,
+  #[clap(long, help = "Do not broadcast any transactions. Implies --dump.")]
+  pub(crate) no_broadcast: bool,
 }
 
 impl Inscribe {
   pub(crate) fn run(self, options: Options) -> SubcommandResult {
+    let mut dump = self.dump;
     let metadata = Inscribe::parse_metadata(self.cbor_metadata, self.json_metadata)?;
+
+    if self.no_broadcast {
+      dump = true;
+    }
 
     let index = Index::open(&options)?;
     index.update()?;
@@ -200,11 +217,13 @@ impl Inscribe {
     Batch {
       commit_fee_rate: self.commit_fee_rate.unwrap_or(self.fee_rate),
       destinations,
+      dump,
       dry_run: self.dry_run,
       inscriptions,
       key: self.key,
       mode,
       no_backup: self.no_backup,
+      no_broadcast: self.no_broadcast,
       no_limit: self.no_limit,
       parent_info,
       postage,
