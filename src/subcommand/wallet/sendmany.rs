@@ -3,6 +3,7 @@ use {
   crate::wallet::Wallet,
   bitcoin::{
     locktime::absolute::LockTime,
+    policy::MAX_STANDARD_TX_WEIGHT,
     Witness,
   },
   bitcoincore_rpc::RawTx,
@@ -17,10 +18,13 @@ use {
 pub(crate) struct SendMany {
   #[arg(long, help = "Use fee rate of <FEE_RATE> sats/vB")]
   fee_rate: FeeRate,
-  #[clap(long, help = "Location of a CSV file containing `inscriptionid`,`destination` pairs.")]
+  #[arg(long, help = "Location of a CSV file containing `inscriptionid`,`destination` pairs.")]
   pub(crate) csv: PathBuf,
-  #[clap(long, help = "Broadcast the transaction; the default is to output the raw tranasction hex so you can check it before broadcasting.")]
+  #[arg(long, help = "Broadcast the transaction; the default is to output the raw tranasction hex so you can check it before broadcasting.")]
   pub(crate) broadcast: bool,
+  #[arg(long, help = "Do not check that the transaction is equal to or below the MAX_STANDARD_TX_WEIGHT of 400,000 weight units. Transactions over this limit are currently nonstandard and will not be relayed by bitcoind in its default configuration. Do not use this flag unless you understand the implications."
+  )]
+  pub(crate) no_limit: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -181,18 +185,25 @@ impl SendMany {
     let value = 0; // we don't know how much change to take until we know the fee, which means knowing the tx vsize
     outputs.push(TxOut{script_pubkey: script_pubkey.clone(), value});
 
-    // calculate the vsize of the tx once it is signed
-    let vsize = Self::estimate_transaction_vsize(inputs.len(), outputs.clone());
-    let fee = self.fee_rate.fee(vsize).to_sat();
+    // calculate the size of the tx once it is signed
+    let fake_tx = Self::build_fake_transaction(&inputs, &outputs);
+    let weight = fake_tx.weight();
+    if !self.no_limit && weight > bitcoin::Weight::from_wu(MAX_STANDARD_TX_WEIGHT.into()) {
+      bail!(
+        "transaction weight greater than {MAX_STANDARD_TX_WEIGHT} (MAX_STANDARD_TX_WEIGHT): {weight}"
+      );
+    }
+    let fee = self.fee_rate.fee(fake_tx.vsize()).to_sat();
     let needed = fee + dust_limit;
     if cardinal_value < needed {
-      bail!("cardinal ({}) is too small: we need enough for fee {} plus dust limit {} = {}", cardinal_value, fee, dust_limit, needed);
+      bail!("cardinal {} ({} sats) is too small\n       we need enough for fee {} plus dust limit {} = {} sats",
+            cardinal_outpoint.to_string(), cardinal_value, fee, dust_limit, needed);
     }
     let value = cardinal_value - fee;
     let last = outputs.len() - 1;
     outputs[last] = TxOut{script_pubkey, value};
 
-    let tx = Self::build_transaction(inputs, outputs);
+    let tx = Self::build_transaction(&inputs, &outputs);
 
     let signed_tx = client.sign_raw_transaction_with_wallet(&tx, None, None)?;
     let signed_tx = signed_tx.hex;
@@ -236,8 +247,8 @@ impl SendMany {
   }
 
   fn build_transaction(
-    inputs: Vec<OutPoint>,
-    outputs: Vec<TxOut>,
+    inputs: &Vec<OutPoint>,
+    outputs: &Vec<TxOut>,
   ) -> Transaction {
     Transaction {
       input: inputs
@@ -249,18 +260,18 @@ impl SendMany {
           sequence: Sequence::ENABLE_RBF_NO_LOCKTIME,
         })
         .collect(),
-      output: outputs,
+      output: outputs.clone(),
       lock_time: LockTime::ZERO,
       version: 1,
     }
   }
 
-  fn estimate_transaction_vsize(
-    inputs: usize,
-    outputs: Vec<TxOut>,
-  ) -> usize {
+  fn build_fake_transaction(
+    inputs: &Vec<OutPoint>,
+    outputs: &Vec<TxOut>,
+  ) -> Transaction {
     Transaction {
-      input: (0..inputs)
+      input: (0..inputs.len())
         .map(|_| TxIn {
           previous_output: OutPoint::null(),
           script_sig: ScriptBuf::new(),
@@ -268,9 +279,9 @@ impl SendMany {
           witness: Witness::from_slice(&[&[0; Self::SCHNORR_SIGNATURE_SIZE]]),
         })
         .collect(),
-      output: outputs,
+      output: outputs.clone(),
       lock_time: LockTime::ZERO,
       version: 1,
-    }.vsize()
+    }
   }
 }
