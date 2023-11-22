@@ -435,6 +435,7 @@ impl<'index> Updater<'_> {
         block.header.time,
         unbound_inscriptions,
         value_cache,
+        index.options.ignore_cursed,
       )?;
 
       if self.index.index_sats {

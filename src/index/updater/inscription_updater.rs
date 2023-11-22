@@ -44,6 +44,7 @@ pub(super) struct InscriptionUpdater<'a, 'db, 'tx> {
   timestamp: u32,
   pub(super) unbound_inscriptions: u64,
   value_cache: &'a mut HashMap<OutPoint, u64>,
+  pub(super) ignore_cursed: bool,
 }
 
 impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
@@ -75,6 +76,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
     timestamp: u32,
     unbound_inscriptions: u64,
     value_cache: &'a mut HashMap<OutPoint, u64>,
+    ignore_cursed: bool,
   ) -> Result<Self> {
     let next_sequence_number = sequence_number_to_id
       .iter()?
@@ -104,6 +106,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
       timestamp,
       unbound_inscriptions,
       value_cache,
+      ignore_cursed,
     })
   }
 
@@ -178,7 +181,9 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
           index: id_counter,
         };
 
-        let curse = if inscription.payload.unrecognized_even_field {
+        let curse = if self.ignore_cursed {
+          None
+        } else if inscription.payload.unrecognized_even_field {
           Some(Curse::UnrecognizedEvenField)
         } else if inscription.payload.duplicate_field {
           Some(Curse::DuplicateField)

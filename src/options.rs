@@ -65,6 +65,8 @@ pub(crate) struct Options {
   pub(crate) ignore_descriptors: bool,
   #[arg(long, help = "Don't fail when the index is out of date. This is dangerous, and results in ord treating inscriptions as cardinals if their corresponding utxos haven't been indexed. Use at your own risk.")]
   pub(crate) ignore_outdated_index: bool,
+  #[arg(long, help = "Treat cursed inscriptions as regular inscriptions when indexing. Be consistent; either specify this flag every time you use a given index file or never.")]
+  pub(crate) ignore_cursed: bool,
 }
 
 impl Options {
