@@ -1053,7 +1053,6 @@ impl Index {
     let mut ret = Vec::new();
 
     let rtx = self.database.begin_read().unwrap();
-
     let sequence_number_to_inscription_entry = rtx
       .open_table(SEQUENCE_NUMBER_TO_INSCRIPTION_ENTRY)
       .unwrap();
@@ -1678,7 +1677,6 @@ impl Index {
     let mut result = Vec::new();
 
     let rtx = self.database.begin_read().unwrap();
-
     let sequence_number_to_inscription_entry = rtx
       .open_table(SEQUENCE_NUMBER_TO_INSCRIPTION_ENTRY)
       .unwrap();

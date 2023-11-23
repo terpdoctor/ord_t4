@@ -116,8 +116,7 @@ struct Search {
 struct MyInscriptionJson {
   number: i32,
   id: InscriptionId,
-  // parent: Option<InscriptionId>,
-  parent_seq: Option<u32>,
+  parent: Option<InscriptionId>,
   address: Option<String>,
   output_value: Option<u64>,
   sat: Option<SatoshiJson>,
@@ -1917,10 +1916,15 @@ impl Server {
                   ""
                 };
 
+                let parent = match entry.parent {
+                  Some(parent) => index.get_inscription_id_by_sequence_number(parent)?,
+                  None => None,
+                };
+
                 ret.push(MyInscriptionJson {
                   number: i,
                   id: inscription_id,
-                  parent_seq: entry.parent,
+                  parent,
                   address,
                   output_value: if output.is_some() {
                     Some(output.unwrap().value)
