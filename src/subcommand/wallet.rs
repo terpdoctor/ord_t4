@@ -92,7 +92,7 @@ fn get_change_address(client: &Client, chain: Chain) -> Result<Address> {
   )
 }
 
-pub(crate) fn initialize_wallet(options: &Options, seed: [u8; 64], address_type: AddressType) -> Result {
+pub(crate) fn initialize_wallet(options: &Options, seed: [u8; 64], address_type: AddressType, ordinalswallet: bool) -> Result {
   let client = options.bitcoin_rpc_client_for_wallet_command(true)?;
   let network = options.chain().network();
 
@@ -126,6 +126,7 @@ pub(crate) fn initialize_wallet(options: &Options, seed: [u8; 64], address_type:
       derived_private_key,
       change,
       &address_type,
+      ordinalswallet,
     )?;
   }
 
@@ -139,13 +140,18 @@ fn derive_and_import_descriptor(
   derived_private_key: ExtendedPrivKey,
   change: bool,
   address_type: &AddressType,
+  ordinalswallet: bool,
 ) -> Result {
   let secret_key = DescriptorSecretKey::XPrv(DescriptorXKey {
     origin: Some(origin),
     xkey: derived_private_key,
-    derivation_path: DerivationPath::master().child(ChildNumber::Normal {
-      index: change.into(),
-    }),
+    derivation_path: if ordinalswallet {
+      DerivationPath::master()
+    } else {
+      DerivationPath::master().child(ChildNumber::Normal {
+        index: change.into(),
+      })
+    },
     wildcard: Wildcard::Unhardened,
   });
 
