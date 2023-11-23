@@ -85,6 +85,7 @@ impl Preview {
             utxo: Vec::new(),
             coin_control: false,
             commit_fee_rate: None,
+            compress: false,
             destination: None,
             dry_run: false,
             fee_rate: FeeRate::try_from(1.0).unwrap(),

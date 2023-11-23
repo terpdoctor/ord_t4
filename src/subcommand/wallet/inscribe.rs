@@ -65,7 +65,7 @@ pub(crate) struct Inscribe {
     long,
     help = "Inscribe a multiple inscriptions defines in a yaml <BATCH_FILE>.",
     conflicts_with_all = &[
-      "file", "destination", "cbor_metadata", "json_metadata", "satpoint", "reinscribe", "metaprotocol", "parent"
+      "cbor_metadata", "destination", "file", "json_metadata", "metaprotocol", "parent", "postage", "reinscribe", "satpoint"
     ]
   )]
   pub(crate) batch: Option<PathBuf>,
@@ -87,6 +87,8 @@ pub(crate) struct Inscribe {
     help = "Use <COMMIT_FEE_RATE> sats/vbyte for commit transaction.\nDefaults to <FEE_RATE> if unset."
   )]
   pub(crate) commit_fee_rate: Option<FeeRate>,
+  #[arg(long, help = "Compress inscription content with brotli.")]
+  pub(crate) compress: bool,
   #[arg(long, help = "Send inscription to <DESTINATION>.")]
   pub(crate) destination: Option<Address<NetworkUnchecked>>,
   #[arg(long, help = "Don't sign or broadcast transactions.")]
@@ -190,8 +192,7 @@ impl Inscribe {
 
     let chain = options.chain();
 
-    let postage = self.postage.unwrap_or(TransactionBuilder::TARGET_POSTAGE);
-
+    let postage;
     let destinations;
     let inscriptions;
     let mode;
@@ -201,6 +202,9 @@ impl Inscribe {
     match (self.file, self.batch) {
       (Some(file), None) => {
         parent_info = Inscribe::get_parent_info(self.parent, &index, &utxos, &client, chain)?;
+
+        postage = self.postage.unwrap_or(TransactionBuilder::TARGET_POSTAGE);
+
         inscriptions = vec![Inscription::from_file(
           chain,
           file,
@@ -208,6 +212,7 @@ impl Inscribe {
           None,
           self.metaprotocol.clone(),
           metadata.clone(),
+          self.compress,
         )?];
         next_inscription = if self.next_file.is_some() {
           Some(Inscription::from_file(
@@ -217,11 +222,14 @@ impl Inscribe {
             None,
             self.metaprotocol,
             metadata,
+            self.compress,
           )?)
         } else {
           None
         };
+
         mode = Mode::SeparateOutputs;
+
         destinations = vec![match self.destination.clone() {
           Some(destination) => destination.require_network(chain.network())?,
           None => get_change_address(&client, chain)?,
@@ -232,24 +240,22 @@ impl Inscribe {
 
         parent_info = Inscribe::get_parent_info(batchfile.parent, &index, &utxos, &client, chain)?;
 
-        inscriptions = batchfile.inscriptions(
+        postage = batchfile
+          .postage
+          .map(Amount::from_sat)
+          .unwrap_or(TransactionBuilder::TARGET_POSTAGE);
+
+        (inscriptions, destinations) = batchfile.inscriptions(
+          &client,
           chain,
           parent_info.as_ref().map(|info| info.tx_out.value),
           metadata,
           postage,
+          self.compress,
         )?;
         next_inscription = None;
 
         mode = batchfile.mode;
-
-        let destination_count = match batchfile.mode {
-          Mode::SharedOutput => 1,
-          Mode::SeparateOutputs => inscriptions.len(),
-        };
-
-        destinations = (0..destination_count)
-          .map(|_| get_change_address(&client, chain))
-          .collect::<Result<Vec<Address>>>()?;
       }
       _ => unreachable!(),
     }
@@ -888,7 +894,7 @@ inscriptions:
           }
         ],
         parent: Some(parent),
-        mode: Mode::SeparateOutputs,
+        ..Default::default()
       }
     );
   }

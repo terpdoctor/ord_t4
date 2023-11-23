@@ -5,7 +5,7 @@ pub(crate) struct Transfer {
   #[clap(long, help = "Delete the whole transfer log table.")]
   delete: bool,
   #[clap(long, help = "Delete transfer logs for blocks before height <TRIM>.")]
-  trim: Option<u64>,
+  trim: Option<u32>,
 }
 
 impl Transfer {
