@@ -1,6 +1,18 @@
 Changelog
 =========
 
+[0.11.1-gm5](https://github.com/gmart7t2/ord/releases/tag/0.11.1-gm5) - 2023-11-23
+----------------------------------------------------------------------------------
+
+### Added
+Add `--ignore-cursed` flag to treat all cursed inscriptions as regular inscriptions when indexing.
+Add `--ordinals-wallet` flag to `wallet restore` to help with recovering coins from an ordinalswallet seed phrase.
+Add some experimental options to allow creating just a commit tx, or just a reveal tx.
+
+### Changed
+Add a max-weight check to the `wallet send-many` command.
+Fixed coin selection algorithm (#2723).
+
 [0.11.1-gm4](https://github.com/gmart7t2/ord/releases/tag/0.11.1-gm4) - 2023-11-19
 ----------------------------------------------------------------------------------
 
