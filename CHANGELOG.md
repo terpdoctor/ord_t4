@@ -1,6 +1,13 @@
 Changelog
 =========
 
+[0.12.0-gm2](https://github.com/gmart7t2/ord/releases/tag/0.12.0-gm2) - 2023-11-26
+----------------------------------------------------------------------------------
+
+### Added
+Add the sequence_number to the /inscriptions/json/ endpoint.
+Add `--commit-input` to `wallet inscribe` and `--force-input` to `wallet send`.
+
 [0.12.0-gm1](https://github.com/gmart7t2/ord/releases/tag/0.12.0-gm1) - 2023-11-25
 ----------------------------------------------------------------------------------
 
