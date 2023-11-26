@@ -115,6 +115,7 @@ struct Search {
 #[derive(Serialize)]
 struct MyInscriptionJson {
   number: i32,
+  sequence_number: u32,
   id: InscriptionId,
   parent: Option<InscriptionId>,
   address: Option<String>,
@@ -1950,6 +1951,7 @@ impl Server {
 
                 ret.push(MyInscriptionJson {
                   number: i,
+                  sequence_number,
                   id: inscription_id,
                   parent,
                   address,
