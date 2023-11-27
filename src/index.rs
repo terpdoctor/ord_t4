@@ -1182,6 +1182,23 @@ impl Index {
     )
   }
 
+  pub(crate) fn get_sequence_number_by_inscription_number(
+    &self,
+    inscription_number: i32,
+  ) -> Result<u32> {
+    let rtx = self.database.begin_read()?;
+
+    let Some(sequence_number) = rtx
+      .open_table(INSCRIPTION_NUMBER_TO_SEQUENCE_NUMBER)?
+      .get(inscription_number)?
+      .map(|guard| guard.value())
+    else {
+      return Err(anyhow!("no inscription number {inscription_number}"));
+    };
+
+    Ok(sequence_number)
+  }
+
   pub(crate) fn get_inscription_id_by_inscription_number(
     &self,
     inscription_number: i32,

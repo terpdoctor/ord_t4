@@ -294,6 +294,10 @@ impl Server {
           "/inscriptions_json/:start/:end",
           get(Self::inscriptions_json_start_end),
         )
+        .route(
+          "/inscriptions_sequence_numbers/:start/:end",
+          get(Self::inscriptions_sequence_numbers),
+        )
         .route("/install.sh", get(Self::install_script))
         .route("/ordinal/:sat", get(Self::ordinal))
         .route("/output/:output", get(Self::output))
@@ -1983,6 +1987,34 @@ impl Server {
         }
 
         Ok(serde_json::to_string_pretty(&ret).ok().unwrap())
+      }
+    }
+  }
+
+  async fn inscriptions_sequence_numbers(
+    Extension(index): Extension<Arc<Index>>,
+    Path(path): Path<(i32, i32)>,
+  ) -> ServerResult<String> {
+    log::info!("GET /inscriptions_sequence_numbers/{}/{}", path.0, path.1);
+
+    let start = path.0;
+    let end = path.1;
+
+    match start.cmp(&end) {
+      Ordering::Equal => Err(ServerError::BadRequest("range length == 0".to_string())),
+      Ordering::Greater => Err(ServerError::BadRequest("range length < 0".to_string())),
+      Ordering::Less => {
+        let mut ret = String::new();
+
+        for i in start..end {
+          sleep(Duration::from_millis(0)).await;
+          match index.get_sequence_number_by_inscription_number(i) {
+            Err(_) => return Err(ServerError::BadRequest(format!("no inscription {i}"))),
+            Ok(sequence_number) => ret += format!("{i},{sequence_number}\n").as_str(),
+          }
+        }
+
+        Ok(ret)
       }
     }
   }
