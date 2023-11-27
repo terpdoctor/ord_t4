@@ -1,6 +1,12 @@
 Changelog
 =========
 
+[0.12.0-gm3](https://github.com/gmart7t2/ord/releases/tag/0.12.0-gm3) - 2023-11-27
+----------------------------------------------------------------------------------
+
+### Added
+Add endpoint `/inscriptions_sequence_numbers/:start/:end` to get the mapping from inscription number to sequence number.
+
 [0.12.0-gm2](https://github.com/gmart7t2/ord/releases/tag/0.12.0-gm2) - 2023-11-26
 ----------------------------------------------------------------------------------
 
