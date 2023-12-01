@@ -38,6 +38,7 @@ enum Origin {
 
 pub(super) struct InscriptionUpdater<'a, 'db, 'tx> {
   pub(super) blessed_inscription_count: u64,
+  pub(super) chain: Chain,
   pub(super) cursed_inscription_count: u64,
   pub(super) flotsam: Vec<Flotsam>,
   pub(super) height: u32,
@@ -137,7 +138,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
 
         let inscribed_offset = inscribed_offsets.get(&offset);
 
-        let curse = if self.ignore_cursed {
+        let curse = if self.ignore_cursed || self.height >= self.chain.jubilee_height() {
           None
         } else if inscription.payload.unrecognized_even_field {
           Some(Curse::UnrecognizedEvenField)
