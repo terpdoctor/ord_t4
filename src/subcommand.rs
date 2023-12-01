@@ -7,6 +7,7 @@ pub mod index;
 pub mod list;
 pub mod parse;
 mod preview;
+pub mod runes;
 mod server;
 pub mod subsidy;
 pub mod supply;
@@ -31,6 +32,8 @@ pub(crate) enum Subcommand {
   Parse(parse::Parse),
   #[command(about = "Run an explorer server populated with inscriptions")]
   Preview(preview::Preview),
+  #[command(about = "List all runes")]
+  Runes,
   #[command(about = "Run the explorer server")]
   Server(server::Server),
   #[command(about = "Display information about a block's subsidy")]
@@ -57,6 +60,7 @@ impl Subcommand {
       Self::List(list) => list.run(options),
       Self::Parse(parse) => parse.run(),
       Self::Preview(preview) => preview.run(),
+      Self::Runes => runes::run(options),
       Self::Server(server) => {
         let index = Arc::new(Index::open(&options)?);
         let handle = axum_server::Handle::new();

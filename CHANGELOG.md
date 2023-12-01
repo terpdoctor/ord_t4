@@ -1,6 +1,24 @@
 Changelog
 =========
 
+[0.12.1](https://github.com/ordinals/ord/releases/tag/0.12.1) - 2023-11-29
+--------------------------------------------------------------------------
+
+### Added
+- Add commands to etch and list runes (#2544)
+- Add ability to specify sat to batch inscribe (#2770)
+- Allow setting the sat to inscribe (#2765)
+- Batch inscribe on same sat (#2749)
+- Add stuttering curse (#2745)
+- Add batch to preview command (#2752)
+
+### Misc
+- Add `public` to /content Cache-Control headers (#2773)
+- Set CSP origin in deploy script (#2764)
+- Fix typos (#2768)
+- Select further away coins which meet target (#2724)
+- Hide all text (#2753)
+
 [0.12.0-gm3](https://github.com/gmart7t2/ord/releases/tag/0.12.0-gm3) - 2023-11-27
 ----------------------------------------------------------------------------------
 
@@ -19,12 +37,6 @@ Add `--commit-input` to `wallet inscribe` and `--force-input` to `wallet send`.
 
 ### Added
 Merged upstream 0.12.0 release.
-
-[0.12.99-gm1](https://github.com/gmart7t2/ord/releases/tag/0.12.99-gm1) - 2023-11-23
-------------------------------------------------------------------------------------
-
-### Added
-Merged upstream master branch.
 
 [0.11.1-gm5](https://github.com/gmart7t2/ord/releases/tag/0.11.1-gm5) - 2023-11-23
 ----------------------------------------------------------------------------------
