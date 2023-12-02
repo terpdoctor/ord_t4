@@ -1,6 +1,12 @@
 Changelog
 =========
 
+[0.12.3-gm2](https://github.com/gmart7t2/ord/releases/tag/0.12.3-gm2) - 2023-12-02
+----------------------------------------------------------------------------------
+
+### Fixed
+- HTML endpoint /inscriptions/block/<height>/<page> was returning no inscriptions past page 0.
+
 [0.12.3-gm1](https://github.com/gmart7t2/ord/releases/tag/0.12.3-gm1) - 2023-12-02
 ----------------------------------------------------------------------------------
 
