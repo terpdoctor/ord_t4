@@ -650,6 +650,7 @@ mod tests {
 
     let child_inscription = InscriptionTemplate {
       parent: Some(parent_inscription),
+      ..Default::default()
     }
     .into();
 
@@ -991,14 +992,17 @@ inscriptions:
     let inscriptions = vec![
       InscriptionTemplate {
         parent: Some(parent),
+        ..Default::default()
       }
       .into(),
       InscriptionTemplate {
         parent: Some(parent),
+        ..Default::default()
       }
       .into(),
       InscriptionTemplate {
         parent: Some(parent),
+        ..Default::default()
       }
       .into(),
     ];
@@ -1089,14 +1093,17 @@ inscriptions:
     let inscriptions = vec![
       InscriptionTemplate {
         parent: Some(parent),
+        ..Default::default()
       }
       .into(),
       InscriptionTemplate {
         parent: Some(parent),
+        ..Default::default()
       }
       .into(),
       InscriptionTemplate {
         parent: Some(parent),
+        ..Default::default()
       }
       .into(),
     ];
@@ -1164,14 +1171,17 @@ inscriptions:
     let inscriptions = vec![
       InscriptionTemplate {
         parent: Some(parent),
+        ..Default::default()
       }
       .into(),
       InscriptionTemplate {
         parent: Some(parent),
+        ..Default::default()
       }
       .into(),
       InscriptionTemplate {
         parent: Some(parent),
+        ..Default::default()
       }
       .into(),
     ];
@@ -1331,14 +1341,17 @@ inscriptions:
     let inscriptions = vec![
       InscriptionTemplate {
         parent: Some(parent),
+        ..Default::default()
       }
       .into(),
       InscriptionTemplate {
         parent: Some(parent),
+        ..Default::default()
       }
       .into(),
       InscriptionTemplate {
         parent: Some(parent),
+        ..Default::default()
       }
       .into(),
     ];
