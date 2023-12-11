@@ -383,7 +383,11 @@ impl<'index> Updater<'_> {
     }
 
     let mut height_to_block_hash = wtx.open_table(HEIGHT_TO_BLOCK_HASH)?;
-    let mut height_to_sequence_number = wtx.open_multimap_table(HEIGHT_TO_SEQUENCE_NUMBER)?;
+    let mut height_to_sequence_number = if index.index_transfers {
+      Some(wtx.open_multimap_table(HEIGHT_TO_SEQUENCE_NUMBER)?)
+    } else {
+      None
+    };
     let mut height_to_last_sequence_number = wtx.open_table(HEIGHT_TO_LAST_SEQUENCE_NUMBER)?;
     let mut home_inscriptions = wtx.open_table(HOME_INSCRIPTIONS)?;
     let mut inscription_id_to_sequence_number =
