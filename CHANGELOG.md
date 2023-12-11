@@ -1,6 +1,12 @@
 Changelog
 =========
 
+[0.12.3-gm3](https://github.com/gmart7t2/ord/releases/tag/0.12.3-gm3) - 2023-12-11
+----------------------------------------------------------------------------------
+
+### Added
+- Add option `--index-transfers` to have the index track which inscriptions are transferred in each block. Previously this was already enabled, using up space in the index whether it was needed or not.
+
 [0.12.3-gm2](https://github.com/gmart7t2/ord/releases/tag/0.12.3-gm2) - 2023-12-02
 ----------------------------------------------------------------------------------
 
