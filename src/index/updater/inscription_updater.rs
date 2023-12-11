@@ -42,7 +42,7 @@ pub(super) struct InscriptionUpdater<'a, 'db, 'tx> {
   pub(super) cursed_inscription_count: u64,
   pub(super) flotsam: Vec<Flotsam>,
   pub(super) height: u32,
-  pub(super) height_to_sequence_number: &'a mut MultimapTable<'db, 'tx, u32, u32>,
+  pub(super) height_to_sequence_number: &'a mut Option<MultimapTable<'db, 'tx, u32, u32>>,
   pub(super) home_inscription_count: u64,
   pub(super) home_inscriptions: &'a mut Table<'db, 'tx, u32, InscriptionIdValue>,
   pub(super) id_to_sequence_number: &'a mut Table<'db, 'tx, InscriptionIdValue, u32>,
@@ -371,9 +371,9 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
             .get(&inscription_id.store())?
             .unwrap()
             .value();
-        self
-          .height_to_sequence_number
-          .insert(&self.height, &sequence_number)?;
+        if let Some(height_to_sequence_number) = &mut self.height_to_sequence_number {
+          height_to_sequence_number.insert(&self.height, &sequence_number)?;
+        }
         self
           .satpoint_to_sequence_number
           .remove_all(&old_satpoint.store())?;
