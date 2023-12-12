@@ -105,6 +105,7 @@ impl Preview {
             super::wallet::inscribe::Inscribe {
               batch: None,
               cbor_metadata: None,
+              change: None,
               coin_control: false,
               commit_fee_rate: None,
               commit_input: Vec::new(),
@@ -147,6 +148,7 @@ impl Preview {
             super::wallet::inscribe::Inscribe {
               batch: Some(batch),
               cbor_metadata: None,
+              change: None,
               coin_control: false,
               commit_fee_rate: None,
               commit_input: Vec::new(),

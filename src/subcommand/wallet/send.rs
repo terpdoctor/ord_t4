@@ -14,6 +14,8 @@ pub(crate) struct Send {
     help = "Only spend outpoints given with --utxo when sending inscriptions or satpoints"
   )]
   pub(crate) coin_control: bool,
+  #[arg(long, help = "Send any change output to <CHANGE>.")]
+  pub(crate) change: Option<Address<NetworkUnchecked>>,
   #[arg(long, help = "Use fee rate of <FEE_RATE> sats/vB")]
   fee_rate: FeeRate,
   #[arg(
@@ -102,9 +104,17 @@ impl Send {
       }
     };
 
+    let change = match self.change {
+      Some(change) => Some(change.require_network(chain.network())?),
+      None => None,
+    };
+
     let change = [
       get_change_address(&client, chain)?,
-      get_change_address(&client, chain)?,
+      match change {
+        Some(change) => change,
+        None => get_change_address(&client, chain)?,
+      },
     ];
 
     let postage = if let Some(postage) = self.postage {
