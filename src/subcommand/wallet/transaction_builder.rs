@@ -59,6 +59,7 @@ pub enum Target {
   Value(Amount),
   Postage,
   ExactPostage(Amount),
+  NoChange(Amount),
 }
 
 impl fmt::Display for Error {
@@ -95,6 +96,7 @@ pub struct TransactionBuilder {
   amounts: BTreeMap<OutPoint, Amount>,
   change_addresses: BTreeSet<Address>,
   fee_rate: FeeRate,
+  force_input: Vec<OutPoint>,
   inputs: Vec<OutPoint>,
   inscriptions: BTreeMap<SatPoint, InscriptionId>,
   locked_utxos: BTreeSet<OutPoint>,
@@ -125,6 +127,7 @@ impl TransactionBuilder {
     change: [Address; 2],
     fee_rate: FeeRate,
     target: Target,
+    force_input: Vec<OutPoint>,
   ) -> Self {
     Self {
       utxos: amounts.keys().cloned().collect(),
@@ -132,6 +135,7 @@ impl TransactionBuilder {
       change_addresses: change.iter().cloned().collect(),
       fee_rate,
       inputs: Vec::new(),
+      force_input: force_input,
       inscriptions,
       locked_utxos,
       outgoing,
@@ -200,7 +204,7 @@ impl TransactionBuilder {
       }
     }
 
-    let amount = *self
+    let mut amount = *self
       .amounts
       .get(&self.outgoing.outpoint)
       .ok_or(Error::NotInWallet(self.outgoing))?;
@@ -211,6 +215,11 @@ impl TransactionBuilder {
 
     self.utxos.remove(&self.outgoing.outpoint);
     self.inputs.push(self.outgoing.outpoint);
+    for input in &self.force_input {
+      self.inputs.push(*input);
+      amount += *self.amounts.get(&input).unwrap();
+      self.utxos.remove(&input);
+    }
     self.outputs.push((self.recipient.clone(), amount));
 
     tprintln!(
@@ -288,7 +297,7 @@ impl TransactionBuilder {
 
     let min_value = match self.target {
       Target::Postage => self.outputs.last().unwrap().0.script_pubkey().dust_value(),
-      Target::Value(value) | Target::ExactPostage(value) => value,
+      Target::Value(value) | Target::ExactPostage(value) | Target::NoChange(value) => value,
     };
 
     let total = min_value
@@ -348,6 +357,7 @@ impl TransactionBuilder {
         Target::ExactPostage(postage) => (postage, postage),
         Target::Postage => (Self::MAX_POSTAGE, TARGET_POSTAGE),
         Target::Value(value) => (value, value),
+        Target::NoChange(_) => (excess, excess),
       };
 
       if excess > max
@@ -579,6 +589,12 @@ impl TransactionBuilder {
                   .unwrap_or_default()
                   + slop,
               "invariant: output equals target value",
+            );
+          }
+          Target::NoChange(value) => {
+            assert!(
+              Amount::from_sat(output.value) >= value,
+              "invariant: output is at least the target amount"
             );
           }
         }

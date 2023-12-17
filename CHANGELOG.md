@@ -38,6 +38,24 @@ Changelog
 - Burn input runes if there are no non-op-return outputs (#2812)
 - Update audit-cache binary (#2804)
 
+[0.12.3-gm3](https://github.com/gmart7t2/ord/releases/tag/0.12.3-gm3) - 2023-12-11
+----------------------------------------------------------------------------------
+
+### Added
+- Add option `--index-transfers` to have the index track which inscriptions are transferred in each block. Previously this was already enabled, using up space in the index whether it was needed or not.
+
+[0.12.3-gm2](https://github.com/gmart7t2/ord/releases/tag/0.12.3-gm2) - 2023-12-02
+----------------------------------------------------------------------------------
+
+### Fixed
+- HTML endpoint /inscriptions/block/<height>/<page> was returning no inscriptions past page 0.
+
+[0.12.3-gm1](https://github.com/gmart7t2/ord/releases/tag/0.12.3-gm1) - 2023-12-02
+----------------------------------------------------------------------------------
+
+### Added
+- Merged 0.12.3 from upstream.
+
 [0.12.3](https://github.com/ordinals/ord/releases/tag/0.12.3) - 2023-12-01
 --------------------------------------------------------------------------
 
@@ -54,6 +72,12 @@ Changelog
 - Fix typos (#2791)
 - Add total bytes and proportion to database info (#2783)
 
+[0.12.2-gm1](https://github.com/gmart7t2/ord/releases/tag/0.12.2-gm1) - 2023-11-30
+----------------------------------------------------------------------------------
+
+### Added
+- Merged 0.12.2 from upstream.
+
 [0.12.2](https://github.com/ordinals/ord/releases/tag/0.12.2) - 2023-11-29
 --------------------------------------------------------------------------
 
@@ -62,6 +86,12 @@ Changelog
 
 ### Misc
 - Hide /content/<INSCRIPTION_ID> HTML inscriptions (#2778)
+
+[0.12.1-gm1](https://github.com/gmart7t2/ord/releases/tag/0.12.1-gm1) - 2023-11-30
+----------------------------------------------------------------------------------
+
+### Added
+- Merged 0.12.1 from upstream.
 
 [0.12.1](https://github.com/ordinals/ord/releases/tag/0.12.1) - 2023-11-29
 --------------------------------------------------------------------------
@@ -80,6 +110,63 @@ Changelog
 - Fix typos (#2768)
 - Select further away coins which meet target (#2724)
 - Hide all text (#2753)
+
+[0.12.0-gm3](https://github.com/gmart7t2/ord/releases/tag/0.12.0-gm3) - 2023-11-27
+----------------------------------------------------------------------------------
+
+### Added
+- Add endpoint `/inscriptions_sequence_numbers/:start/:end` to get the mapping from inscription number to sequence number.
+
+[0.12.0-gm2](https://github.com/gmart7t2/ord/releases/tag/0.12.0-gm2) - 2023-11-26
+----------------------------------------------------------------------------------
+
+### Added
+- Add the sequence_number to the /inscriptions/json/ endpoint.
+- Add `--commit-input` to `wallet inscribe` and `--force-input` to `wallet send`.
+
+[0.12.0-gm1](https://github.com/gmart7t2/ord/releases/tag/0.12.0-gm1) - 2023-11-25
+----------------------------------------------------------------------------------
+
+### Added
+- Merged upstream 0.12.0 release.
+
+[0.11.1-gm5](https://github.com/gmart7t2/ord/releases/tag/0.11.1-gm5) - 2023-11-23
+----------------------------------------------------------------------------------
+
+### Added
+- Add `--ignore-cursed` flag to treat all cursed inscriptions as regular inscriptions when indexing.
+- Add `--ordinals-wallet` flag to `wallet restore` to help with recovering coins from an ordinalswallet seed phrase.
+- Add some experimental options to allow creating just a commit tx, or just a reveal tx.
+
+### Changed
+- Add a max-weight check to the `wallet send-many` command.
+- Fixed coin selection algorithm (#2723).
+
+[0.11.1-gm4](https://github.com/gmart7t2/ord/releases/tag/0.11.1-gm4) - 2023-11-19
+----------------------------------------------------------------------------------
+
+### Added
+- Add `--dump` and `--no-broadcast` flags to `wallet inscribe`.
+- Add `wallet send-many` to allow sending multiple inscriptions in a single command.
+
+[0.11.1-gm3](https://github.com/gmart7t2/ord/releases/tag/0.11.1-gm3) - 2023-11-15
+----------------------------------------------------------------------------------
+
+### Added
+- Add `--key` flag to `wallet inscribe` to allow using a specific recovery key.
+- Add `--ignore-outdated-index` flag to allow ord to run without having to fully index the blockchain. Be careful. Inscriptions that haven't been indexed will be treated as if they are cardinals, and so can be accidentally sent to spent as fees.
+
+[0.11.1-gm2](https://github.com/gmart7t2/ord/releases/tag/0.11.1-gm2) - 2023-11-14
+----------------------------------------------------------------------------------
+
+### Changed
+- Fixed the `/children` endpoint.
+
+[0.11.1-gm1](https://github.com/gmart7t2/ord/releases/tag/0.11.1-gm1) - 2023-11-14
+----------------------------------------------------------------------------------
+
+### Added
+- Merged my changes from 0.11.0 to 0.11.1.
 
 [0.12.0](https://github.com/ordinals/ord/releases/tag/0.12.0) - 2023-11-24
 --------------------------------------------------------------------------
@@ -141,6 +228,23 @@ Changelog
 ### Misc
 - Refactor varint encoding (#2645)
 
+[0.11.0-gm2](https://github.com/gmart7t2/ord/releases/tag/0.11.0-gm2) - 2023-11-14
+----------------------------------------------------------------------------------
+
+### Added
+- Add logging for new server endpoints.
+- Add ord version to `/stats` endpoint output.
+
+### Changed
+- Move server debug logging to debug level.
+- Remove `children` subcommand and replace it with `/children` server endpoint.
+
+[0.11.0-gm1](https://github.com/gmart7t2/ord/releases/tag/0.11.0-gm1) - 2023-11-09
+----------------------------------------------------------------------------------
+
+### Added
+- Merged my changes from 0.10.x to 0.11.x.
+
 [0.11.0](https://github.com/ordinals/ord/releases/tag/0.11.0) - 2023-11-07
 --------------------------------------------------------------------------
 
@@ -181,6 +285,18 @@ Changelog
 - Add rune numbers (#2557)
 - Ignore non push opcodes in runestones (#2553)
 - Improve rune minimum at height (#2546)
+
+[0.10.0-gm2](https://github.com/gmart7t2/ord/releases/tag/0.10.0-gm2) - 2023-11-03
+----------------------------------------------------------------------------------
+
+### Added
+- Add `--address-type` flag to `wallet create` and `wallet restore`.
+
+[0.10.0-gm1](https://github.com/gmart7t2/ord/releases/tag/0.10.0-gm1) - 2023-10-25
+----------------------------------------------------------------------------------
+
+### Added
+- Merged my changes from 0.9.x to 0.10.x.
 
 [0.10.0](https://github.com/ordinals/ord/releases/tag/0.10.0) - 2023-10-23
 --------------------------------------------------------------------------
@@ -254,6 +370,78 @@ Changelog
 - Don't encode divisibility if zero (#2510)
 - Format rune supply using divisibility (#2509)
 - Add pre-alpha unstable incomplete half-baked rune index (#2491)
+
+[0.9.0-gm5](https://github.com/ordinals/ord/releases/tag/0.9.0-gm5) - 2023-10-21
+--------------------------------------------------------------------------------
+
+### Added
+
+- Add `/outputs` endpoint to fetch details for multiple outputs per request.
+
+[0.9.0-gm4](https://github.com/ordinals/ord/releases/tag/0.9.0-gm4) - 2023-10-18
+--------------------------------------------------------------------------------
+
+### Added
+
+- Add `/transfers/<height>/<start>` and `/transfers/<height>/<start>/<end>` endpoints to allow pagination.
+
+[0.9.0-gm3](https://github.com/ordinals/ord/releases/tag/0.9.0-gm3) - 2023-10-10
+--------------------------------------------------------------------------------
+
+### Changed
+
+- Modify the /ranges endpoint to group the ranges by output.
+
+[0.9.0-gm2](https://github.com/ordinals/ord/releases/tag/0.9.0-gm2) - 2023-10-10
+--------------------------------------------------------------------------------
+
+### Changed
+
+- Fix github releases.
+
+[0.9.0-gm1](https://github.com/ordinals/ord/releases/tag/0.9.0-gm1) - 2023-10-10
+--------------------------------------------------------------------------------
+
+### Added
+
+- Add `--ignore-descriptors` flag to allow ord to work with non-ord wallets.
+
+[0.9.0-gms4](https://github.com/ordinals/ord/releases/tag/0.9.0-gms4) - 2023-09-18
+----------------------------------------------------------------------------------
+
+### Added
+
+- Speed up `/transfers/` endpoint and don't block while running it.
+- Add `application/cbor` media type with extension `.cbor` (#2446)
+- Add --utxo flag to allow the use of unconfirmed outputs.
+- Add --coin-control flag to limit which outputs can be spent.
+- Add `/ranges` endpoint for looking up the sat ranges for a batch of outputs.
+
+[0.9.0-gms3](https://github.com/ordinals/ord/releases/tag/0.9.0-gms3) - 2023-09-12
+----------------------------------------------------------------------------------
+
+### Added
+
+- Add subcommand `children` to list all the child/parent pairs
+
+[0.9.0-gms2](https://github.com/ordinals/ord/releases/tag/0.9.0-gms2) - 2023-09-11
+----------------------------------------------------------------------------------
+
+### Added
+
+- Add `parent` and `children` to `/inscriptions_json/` endpoint
+
+[0.9.0-gms1](https://github.com/ordinals/ord/releases/tag/0.9.0-gms1) - 2023-09-11
+----------------------------------------------------------------------------------
+
+### Added
+
+- Add `/inscriptions_json/` endpoint
+- Add `/transfers/` endpoint
+- Add `/stats/` endpoint
+- Only index blocks when new blocks exist and the height limit isn't reached
+- Add `--no-progress-bar` flag to inhibit the display of the progress bar
+- Add server request logging
 
 [0.9.0](https://github.com/ordinals/ord/releases/tag/0.9.0) - 2023-09-11
 ------------------------------------------------------------------------

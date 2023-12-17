@@ -25,6 +25,7 @@ pub mod receive;
 mod restore;
 pub mod sats;
 pub mod send;
+pub mod sendmany;
 pub mod transaction_builder;
 pub mod transactions;
 
@@ -48,12 +49,22 @@ pub(crate) enum Wallet {
   Sats(sats::Sats),
   #[command(about = "Send sat or inscription")]
   Send(send::Send),
+  #[command(about = "Send multiple inscriptions in a single transaction")]
+  SendMany(sendmany::SendMany),
   #[command(about = "See wallet transactions")]
   Transactions(transactions::Transactions),
   #[command(about = "List all unspent outputs in wallet")]
   Outputs,
   #[command(about = "List unspent cardinal outputs in wallet")]
   Cardinals,
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub(crate) enum AddressType {
+  Legacy,
+  P2SHSegwit,
+  Bech32,
+  Bech32m,
 }
 
 impl Wallet {
@@ -68,6 +79,7 @@ impl Wallet {
       Self::Restore(restore) => restore.run(options),
       Self::Sats(sats) => sats.run(options),
       Self::Send(send) => send.run(options),
+      Self::SendMany(sendmany) => sendmany.run(options),
       Self::Transactions(transactions) => transactions.run(options),
       Self::Outputs => outputs::run(options),
       Self::Cardinals => cardinals::run(options),
@@ -84,7 +96,7 @@ fn get_change_address(client: &Client, chain: Chain) -> Result<Address> {
   )
 }
 
-pub(crate) fn initialize_wallet(options: &Options, seed: [u8; 64]) -> Result {
+pub(crate) fn initialize_wallet(options: &Options, seed: [u8; 64], address_type: AddressType, ordinalswallet: bool) -> Result {
   let client = options.bitcoin_rpc_client_for_wallet_command(true)?;
   let network = options.chain().network();
 
@@ -97,7 +109,12 @@ pub(crate) fn initialize_wallet(options: &Options, seed: [u8; 64]) -> Result {
   let fingerprint = master_private_key.fingerprint(&secp);
 
   let derivation_path = DerivationPath::master()
-    .child(ChildNumber::Hardened { index: 86 })
+    .child(ChildNumber::Hardened { index: match address_type {
+      AddressType::Legacy => 44,
+      AddressType::P2SHSegwit => 49,
+      AddressType::Bech32 => 84,
+      AddressType::Bech32m => 86,
+    } })
     .child(ChildNumber::Hardened {
       index: u32::from(network != Network::Bitcoin),
     })
@@ -112,6 +129,8 @@ pub(crate) fn initialize_wallet(options: &Options, seed: [u8; 64]) -> Result {
       (fingerprint, derivation_path.clone()),
       derived_private_key,
       change,
+      &address_type,
+      ordinalswallet,
     )?;
   }
 
@@ -124,13 +143,19 @@ fn derive_and_import_descriptor(
   origin: (Fingerprint, DerivationPath),
   derived_private_key: ExtendedPrivKey,
   change: bool,
+  address_type: &AddressType,
+  ordinalswallet: bool,
 ) -> Result {
   let secret_key = DescriptorSecretKey::XPrv(DescriptorXKey {
     origin: Some(origin),
     xkey: derived_private_key,
-    derivation_path: DerivationPath::master().child(ChildNumber::Normal {
-      index: change.into(),
-    }),
+    derivation_path: if ordinalswallet {
+      DerivationPath::master()
+    } else {
+      DerivationPath::master().child(ChildNumber::Normal {
+        index: change.into(),
+      })
+    },
     wildcard: Wildcard::Unhardened,
   });
 
@@ -139,7 +164,12 @@ fn derive_and_import_descriptor(
   let mut key_map = std::collections::HashMap::new();
   key_map.insert(public_key.clone(), secret_key);
 
-  let desc = Descriptor::new_tr(public_key, None)?;
+  let desc = match address_type {
+    AddressType::Legacy => Descriptor::new_pkh(public_key),
+    AddressType::P2SHSegwit => Descriptor::new_sh_wpkh(public_key),
+    AddressType::Bech32 => Descriptor::new_wpkh(public_key),
+    AddressType::Bech32m => Descriptor::new_tr(public_key, None),
+  }?;
 
   client.import_descriptors(ImportDescriptors {
     descriptor: desc.to_string_with_secret(&key_map),

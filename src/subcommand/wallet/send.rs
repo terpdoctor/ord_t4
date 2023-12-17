@@ -4,6 +4,16 @@ use {super::*, crate::subcommand::wallet::transaction_builder::Target, crate::wa
 pub(crate) struct Send {
   address: Address<NetworkUnchecked>,
   outgoing: Outgoing,
+  #[arg(
+    long,
+    help = "Consider spending outpoint <UTXO>, even if it is unconfirmed or contains inscriptions"
+  )]
+  utxo: Vec<OutPoint>,
+  #[clap(
+    long,
+    help = "Only spend outpoints given with --utxo when sending inscriptions or satpoints"
+  )]
+  pub(crate) coin_control: bool,
   #[arg(long, help = "Use fee rate of <FEE_RATE> sats/vB")]
   fee_rate: FeeRate,
   #[arg(
@@ -11,6 +21,8 @@ pub(crate) struct Send {
     help = "Target amount of postage to include with sent inscriptions. Default `10000sat`"
   )]
   pub(crate) postage: Option<Amount>,
+  #[clap(long, help = "Require this utxo to be spent. Useful for forcing CPFP.")]
+  pub(crate) force_input: Vec<OutPoint>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -32,6 +44,25 @@ impl Send {
 
     let client = options.bitcoin_rpc_client_for_wallet_command(false)?;
 
+    let mut unspent_outputs = if self.coin_control {
+      BTreeMap::new()
+    } else if options.ignore_outdated_index {
+      return Err(anyhow!(
+        "--ignore-outdated-index only works in conjunction with --coin-control when sending"
+      ));
+    } else {
+      index.get_unspent_outputs(Wallet::load(&options)?)?
+    };
+
+    for outpoint in &self.utxo {
+      unspent_outputs.insert(
+        *outpoint,
+        Amount::from_sat(
+          client.get_raw_transaction(&outpoint.txid, None)?.output[outpoint.vout as usize].value,
+        ),
+      );
+    }
+
     let wallet = Wallet::load(&options)?;
 
     let unspent_outputs = index.get_unspent_outputs(wallet)?;
@@ -45,6 +76,9 @@ impl Send {
 
     let satpoint = match self.outgoing {
       Outgoing::Amount(amount) => {
+        if self.coin_control || !self.utxo.is_empty() {
+          bail!("--coin_control and --utxo don't work when sending cardinals");
+        }
         Self::lock_non_cardinal_outputs(&client, &inscriptions, &runic_outputs, unspent_outputs)?;
         let transaction = Self::send_amount(&client, amount, address, self.fee_rate)?;
         return Ok(Box::new(Output { transaction }));
@@ -104,6 +138,7 @@ impl Send {
       change,
       self.fee_rate,
       postage,
+      self.force_input,
     )
     .build_transaction()?;
 

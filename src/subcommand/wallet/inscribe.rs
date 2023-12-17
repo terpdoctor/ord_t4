@@ -12,8 +12,10 @@ use {
     taproot::Signature,
     taproot::{ControlBlock, LeafVersion, TapLeafHash, TaprootBuilder},
   },
-  bitcoincore_rpc::bitcoincore_rpc_json::{ImportDescriptors, SignRawTransactionInput, Timestamp},
+  bitcoincore_rpc::bitcoincore_rpc_json::{GetRawTransactionResultVout, ImportDescriptors, SignRawTransactionInput, Timestamp},
   bitcoincore_rpc::Client,
+  bitcoincore_rpc::RawTx,
+  std::collections::BTreeSet,
 };
 
 mod batch;
@@ -26,10 +28,19 @@ pub struct InscriptionInfo {
 
 #[derive(Serialize, Deserialize)]
 pub struct Output {
-  pub commit: Txid,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub commit: Option<Txid>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub commit_hex: Option<String>,
   pub inscriptions: Vec<InscriptionInfo>,
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub parent: Option<InscriptionId>,
-  pub reveal: Txid,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub recovery_descriptor: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub reveal: Option<Txid>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub reveal_hex: Option<String>,
   pub total_fees: u64,
 }
 
@@ -62,6 +73,13 @@ pub(crate) struct Inscribe {
     conflicts_with = "json_metadata"
   )]
   pub(crate) cbor_metadata: Option<PathBuf>,
+  #[arg(
+    long,
+    help = "Consider spending outpoint <UTXO>, even if it is unconfirmed or contains inscriptions"
+  )]
+  pub(crate) utxo: Vec<OutPoint>,
+  #[arg(long, help = "Only spend outpoints given with --utxo")]
+  pub(crate) coin_control: bool,
   #[arg(
     long,
     help = "Use <COMMIT_FEE_RATE> sats/vbyte for commit transaction.\nDefaults to <FEE_RATE> if unset."
@@ -103,26 +121,85 @@ pub(crate) struct Inscribe {
   pub(crate) reinscribe: bool,
   #[arg(long, help = "Inscribe <SATPOINT>.")]
   pub(crate) satpoint: Option<SatPoint>,
+  #[clap(long, help = "Use provided recovery key instead of a random one.")]
+  pub(crate) key: Option<String>,
+  #[clap(long, help = "Don't make a reveal tx; just create a commit tx that sends all the sats to a new commitment. Either specify --key if you have one, or note the --key it generates for you. Implies --no-backup.")]
+  pub(crate) commit_only: bool,
+  #[clap(long, help = "Don't make a commit transaction; just create a reveal tx that reveals the inscription committed to by output <COMMITMENT>. Requires the same --key as was used to make the commitment. Implies --no-backup. This doesn't work if the --key has ever been backed up to the wallet.")]
+  pub(crate) commitment: Option<OutPoint>,
+  #[clap(long, help = "Make the change of the reveal tx commit to the contents of <NEXT-FILE>.")]
+  pub(crate) next_file: Option<PathBuf>,
+  #[clap(long, help = "Use <REVEAL-INPUT> as an extra input to the reveal tx. For use with `--commitment`.")]
+  pub(crate) reveal_input: Vec<OutPoint>,
+  #[clap(long, help = "Dump raw hex transactions and recovery keys to standard output.")]
+  pub(crate) dump: bool,
+  #[clap(long, help = "Do not broadcast any transactions. Implies --dump.")]
+  pub(crate) no_broadcast: bool,
+  #[clap(long, help = "Use <COMMIT-INPUT> as an extra input to the commit tx. Useful for forcing CPFP.")]
+  pub(crate) commit_input: Vec<OutPoint>,
   #[arg(long, help = "Inscribe <SAT>.", conflicts_with = "satpoint")]
   pub(crate) sat: Option<Sat>,
 }
 
 impl Inscribe {
   pub(crate) fn run(self, options: Options) -> SubcommandResult {
+    if self.commitment.is_some() && self.key.is_none() {
+      return Err(anyhow!("--commitment only works with --key"));
+    }
+
+    if self.commit_only && self.commitment.is_some() {
+      return Err(anyhow!("--commit-only and --commitment don't work together"));
+    }
+
+    if self.commit_only && self.next_file.is_some() {
+      return Err(anyhow!("--commit-only and --next_file don't work together"));
+    }
+
+    if self.commitment.is_none() && !self.reveal_input.is_empty() {
+      return Err(anyhow!("--reveal-input only works with --commitment"));
+    }
+
+    let mut no_backup = self.no_backup;
+    if self.commit_only || self.commitment.is_some() {
+      no_backup = true;
+    }
+
+    let mut dump = self.dump;
     let metadata = Inscribe::parse_metadata(self.cbor_metadata, self.json_metadata)?;
+
+    if self.no_broadcast {
+      dump = true;
+    }
 
     let index = Index::open(&options)?;
     index.update()?;
 
     let wallet = Wallet::load(&options)?;
 
-    let utxos = index.get_unspent_outputs(wallet)?;
+    let mut utxos = if self.coin_control {
+      BTreeMap::new()
+    } else if options.ignore_outdated_index {
+      return Err(anyhow!(
+        "--ignore-outdated-index only works in conjunction with --coin-control when inscribing"
+      ));
+    } else {
+      index.get_unspent_outputs(Wallet::load(&options)?)?
+    };
 
     let locked_utxos = index.get_locked_outputs(wallet)?;
 
     let runic_utxos = index.get_runic_outputs(&utxos.keys().cloned().collect::<Vec<OutPoint>>())?;
 
     let client = options.bitcoin_rpc_client_for_wallet_command(false)?;
+
+    for outpoint in &self.utxo {
+      utxos.insert(
+        *outpoint,
+        Amount::from_sat(
+          client.get_raw_transaction(&outpoint.txid, None)?.output[outpoint.vout as usize].value,
+        ),
+      );
+    }
 
     let chain = options.chain();
 
@@ -131,6 +208,7 @@ impl Inscribe {
     let inscriptions;
     let mode;
     let parent_info;
+    let next_inscription;
     let sat;
 
     match (self.file, self.batch) {
@@ -144,10 +222,23 @@ impl Inscribe {
           file,
           self.parent,
           None,
-          self.metaprotocol,
-          metadata,
+          self.metaprotocol.clone(),
+          metadata.clone(),
           self.compress,
         )?];
+        next_inscription = if self.next_file.is_some() {
+          Some(Inscription::from_file(
+            chain,
+            self.next_file.unwrap(),
+            self.parent,
+            None,
+            self.metaprotocol,
+            metadata,
+            self.compress,
+          )?)
+        } else {
+          None
+        };
 
         mode = Mode::SeparateOutputs;
 
@@ -176,6 +267,7 @@ impl Inscribe {
           postage,
           self.compress,
         )?;
+        next_inscription = None;
 
         mode = batchfile.mode;
 
@@ -204,19 +296,31 @@ impl Inscribe {
 
     Batch {
       commit_fee_rate: self.commit_fee_rate.unwrap_or(self.fee_rate),
+      commit_only: self.commit_only,
+      commitment: self.commitment,
+      commitment_output: if self.commitment.is_some() {
+        Some(client.get_raw_transaction_info(&self.commitment.unwrap().txid, None)?.vout[self.commitment.unwrap().vout as usize].clone())
+      } else {
+        None
+      },
       destinations,
+      dump,
       dry_run: self.dry_run,
       inscriptions,
+      key: self.key,
       mode,
-      no_backup: self.no_backup,
+      next_inscription,
+      no_backup,
+      no_broadcast: self.no_broadcast,
       no_limit: self.no_limit,
       parent_info,
       postage,
       reinscribe: self.reinscribe,
       reveal_fee_rate: self.fee_rate,
+      reveal_input: self.reveal_input,
       satpoint,
     }
-    .inscribe(chain, &index, &client, &locked_utxos, runic_utxos, &utxos)
+    .inscribe(chain, &index, &client, &locked_utxos, runic_utxos, &utxos, self.commit_input)
   }
 
   fn parse_metadata(cbor: Option<PathBuf>, json: Option<PathBuf>) -> Result<Option<Vec<u8>>> {

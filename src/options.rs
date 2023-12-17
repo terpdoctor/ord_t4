@@ -49,6 +49,10 @@ pub(crate) struct Options {
   pub(crate) index_runes: bool,
   #[arg(long, help = "Track location of all satoshis.")]
   pub(crate) index_sats: bool,
+  #[clap(long, help = "Track transfers of inscriptions.")]
+  pub(crate) index_transfers: bool,
+  #[arg(long, help = "Inhibit the display of the progress bar while updating the index.")]
+  pub(crate) no_progress_bar: bool,
   #[arg(long, short, help = "Use regtest. Equivalent to `--chain regtest`.")]
   pub(crate) regtest: bool,
   #[arg(long, help = "Connect to Bitcoin Core RPC at <RPC_URL>.")]
@@ -59,6 +63,14 @@ pub(crate) struct Options {
   pub(crate) testnet: bool,
   #[arg(long, default_value = "ord", help = "Use wallet named <WALLET>.")]
   pub(crate) wallet: String,
+  #[arg(long, help = "Don't check for standard wallet descriptors.")]
+  pub(crate) ignore_descriptors: bool,
+  #[arg(long, help = "Don't fail when the index is out of date. This is dangerous, and results in ord treating inscriptions as cardinals if their corresponding utxos haven't been indexed. Use at your own risk.")]
+  pub(crate) ignore_outdated_index: bool,
+  #[arg(long, help = "Treat cursed inscriptions as regular inscriptions when indexing. Be consistent; either specify this flag every time you use a given index file or never.")]
+  pub(crate) ignore_cursed: bool,
+  #[arg(long, default_value = "5000", help = "Commit changes to the index file on disk every <COMMIT> blocks.")]
+  pub(crate) commit: usize,
 }
 
 impl Options {
@@ -270,6 +282,7 @@ impl Options {
         client.load_wallet(&self.wallet)?;
       }
 
+      if !self.ignore_descriptors {
       let descriptors = client.list_descriptors(None)?.descriptors;
 
       let tr = descriptors
@@ -284,6 +297,7 @@ impl Options {
 
       if tr != 2 || descriptors.len() != 2 + rawtr {
         bail!("wallet \"{}\" contains unexpected output descriptors, and does not appear to be an `ord` wallet, create a new wallet with `ord wallet create`", self.wallet);
+      }
       }
     }
 

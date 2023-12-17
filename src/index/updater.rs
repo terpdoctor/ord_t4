@@ -68,6 +68,7 @@ impl<'index> Updater<'_> {
       )?;
 
     let mut progress_bar = if cfg!(test)
+      || self.index.no_progress_bar
       || log_enabled!(log::Level::Info)
       || starting_height <= self.height
       || integration_test()
@@ -82,6 +83,9 @@ impl<'index> Updater<'_> {
       Some(progress_bar)
     };
 
+    if starting_height > self.height
+      && (self.index.height_limit.is_none() || self.index.height_limit.unwrap() > self.height)
+    {
     let rx = Self::fetch_blocks_from(self.index, self.height, self.index.index_sats)?;
 
     let (mut outpoint_sender, mut value_receiver) = Self::spawn_fetcher(self.index)?;
@@ -112,7 +116,8 @@ impl<'index> Updater<'_> {
 
       uncommitted += 1;
 
-      if uncommitted == 5000 {
+      if uncommitted == self.index.options.commit {
+        // eprintln!("\ncommitting after {} blocks at {}", uncommitted, self.height);
         self.commit(wtx, value_cache)?;
         value_cache = HashMap::new();
         uncommitted = 0;
@@ -152,6 +157,7 @@ impl<'index> Updater<'_> {
     if let Some(progress_bar) = &mut progress_bar {
       progress_bar.finish_and_clear();
     }
+  }
 
     Ok(())
   }
@@ -377,6 +383,11 @@ impl<'index> Updater<'_> {
     }
 
     let mut height_to_block_hash = wtx.open_table(HEIGHT_TO_BLOCK_HASH)?;
+    let mut height_to_sequence_number = if index.index_transfers {
+      Some(wtx.open_multimap_table(HEIGHT_TO_SEQUENCE_NUMBER)?)
+    } else {
+      None
+    };
     let mut height_to_last_sequence_number = wtx.open_table(HEIGHT_TO_LAST_SEQUENCE_NUMBER)?;
     let mut home_inscriptions = wtx.open_table(HOME_INSCRIPTIONS)?;
     let mut inscription_id_to_sequence_number =
@@ -426,9 +437,11 @@ impl<'index> Updater<'_> {
       cursed_inscription_count,
       flotsam: Vec::new(),
       height: self.height,
+      height_to_sequence_number: &mut height_to_sequence_number,
       home_inscription_count,
       home_inscriptions: &mut home_inscriptions,
       id_to_sequence_number: &mut inscription_id_to_sequence_number,
+      ignore_cursed: index.options.ignore_cursed,
       inscription_number_to_sequence_number: &mut inscription_number_to_sequence_number,
       lost_sats,
       next_sequence_number,

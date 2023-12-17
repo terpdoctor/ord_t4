@@ -57,6 +57,7 @@ macro_rules! define_multimap_table {
 define_multimap_table! { SATPOINT_TO_SEQUENCE_NUMBER, &SatPointValue, u32 }
 define_multimap_table! { SAT_TO_SEQUENCE_NUMBER, u64, u32 }
 define_multimap_table! { SEQUENCE_NUMBER_TO_CHILDREN, u32, u32 }
+define_multimap_table! { HEIGHT_TO_SEQUENCE_NUMBER, u32, u32 }
 define_table! { HEIGHT_TO_BLOCK_HASH, u32, &BlockHashValue }
 define_table! { HEIGHT_TO_LAST_SEQUENCE_NUMBER, u32, u32 }
 define_table! { HOME_INSCRIPTIONS, u32, InscriptionIdValue }
@@ -180,6 +181,8 @@ pub(crate) struct Index {
   height_limit: Option<u32>,
   index_runes: bool,
   index_sats: bool,
+  index_transfers: bool,
+  no_progress_bar: bool,
   options: Options,
   path: PathBuf,
   started: DateTime<Utc>,
@@ -289,6 +292,7 @@ impl Index {
         tx.open_multimap_table(SATPOINT_TO_SEQUENCE_NUMBER)?;
         tx.open_multimap_table(SAT_TO_SEQUENCE_NUMBER)?;
         tx.open_multimap_table(SEQUENCE_NUMBER_TO_CHILDREN)?;
+        tx.open_multimap_table(HEIGHT_TO_SEQUENCE_NUMBER)?;
         tx.open_table(HEIGHT_TO_BLOCK_HASH)?;
         tx.open_table(HEIGHT_TO_LAST_SEQUENCE_NUMBER)?;
         tx.open_table(HOME_INSCRIPTIONS)?;
@@ -346,6 +350,8 @@ impl Index {
       height_limit: options.height_limit,
       index_runes,
       index_sats,
+      index_transfers: options.index_transfers,
+      no_progress_bar: options.no_progress_bar,
       options: options.clone(),
       path,
       started: Utc::now(),
@@ -403,6 +409,7 @@ impl Index {
         ),
       );
     }
+    if !self.options.ignore_outdated_index {
     let rtx = self.database.begin_read()?;
     let outpoint_to_value = rtx.open_table(OUTPOINT_TO_VALUE)?;
     for outpoint in utxos.keys() {
@@ -411,6 +418,7 @@ impl Index {
           "output in Bitcoin Core wallet but not in ord index: {outpoint}"
         ));
       }
+    }
     }
 
     Ok(utxos)
@@ -1148,6 +1156,11 @@ impl Index {
     entry.id
   }
 
+  pub(crate) fn get_children_by_sequence_number(&self, sequence_number: u32) -> Result<Vec<InscriptionId>> {
+    let (children, _more) = self.get_children_by_sequence_number_paginated(sequence_number, usize::MAX, 0)?;
+    Ok(children)
+  }
+
   pub(crate) fn get_children_by_sequence_number_paginated(
     &self,
     sequence_number: u32,
@@ -1218,6 +1231,30 @@ impl Index {
     let entry = rune_id_to_rune_entry.get(&id.value())?.unwrap();
 
     Ok(Some(RuneEntry::load(entry.value()).spaced_rune()))
+  }
+
+  pub(crate) fn get_inscription_ids_by_height(&self, height: u32) -> Result<Vec<InscriptionId>> {
+    let mut ret = Vec::new();
+
+    let rtx = self.database.begin_read().unwrap();
+    let sequence_number_to_inscription_entry = rtx
+      .open_table(SEQUENCE_NUMBER_TO_INSCRIPTION_ENTRY)
+      .unwrap();
+
+    for range in self
+      .database
+      .begin_read()?
+      .open_multimap_table(HEIGHT_TO_SEQUENCE_NUMBER)?
+      .range::<&u32>(&height..&(height + 1))?
+    {
+      let (_, ids) = range?;
+      for id in ids {
+        let entry = InscriptionEntry::load(sequence_number_to_inscription_entry.get(id?.value())?.unwrap().value());
+        ret.push(entry.id);
+      }
+    }
+
+    Ok(ret)
   }
 
   pub(crate) fn get_inscription_ids_by_sat(&self, sat: Sat) -> Result<Vec<InscriptionId>> {
@@ -1327,6 +1364,23 @@ impl Index {
         .get(&n)?
         .map(|entry| InscriptionEntry::load(entry.value()).id),
     )
+  }
+
+  pub(crate) fn get_sequence_number_by_inscription_number(
+    &self,
+    inscription_number: i32,
+  ) -> Result<u32> {
+    let rtx = self.database.begin_read()?;
+
+    let Some(sequence_number) = rtx
+      .open_table(INSCRIPTION_NUMBER_TO_SEQUENCE_NUMBER)?
+      .get(inscription_number)?
+      .map(|guard| guard.value())
+    else {
+      return Err(anyhow!("no inscription number {inscription_number}"));
+    };
+
+    Ok(sequence_number)
   }
 
   pub(crate) fn get_inscription_id_by_inscription_number(
@@ -1582,6 +1636,18 @@ impl Index {
     }
   }
 
+  pub(crate) fn ranges(&self, outpoint: OutPoint) -> Result<Vec<(u64, u64)>> {
+    match self.list_inner(outpoint.store())? {
+      Some(sat_ranges) => 
+        Ok(sat_ranges
+           .chunks_exact(11)
+           .map(|chunk| SatRange::load(chunk.try_into().unwrap()))
+           .collect(),
+        ),
+      None => Err(anyhow!("no ranges")),
+    }
+  }
+
   pub(crate) fn block_time(&self, height: Height) -> Result<Blocktime> {
     let height = height.n();
 
@@ -1619,9 +1685,19 @@ impl Index {
     &self,
     utxos: &BTreeMap<OutPoint, Amount>,
   ) -> Result<BTreeMap<SatPoint, InscriptionId>> {
+    let mut result = BTreeMap::new();
+
+    result.extend(self.get_inscriptions_vector(utxos)?.into_iter());
+    Ok(result)
+  }
+
+  pub(crate) fn get_inscriptions_vector(
+    &self,
+    utxos: &BTreeMap<OutPoint, Amount>,
+  ) -> Result<Vec<(SatPoint, InscriptionId)>> {
     let rtx = self.database.begin_read()?;
 
-    let mut result = BTreeMap::new();
+    let mut result = Vec::new();
 
     let satpoint_to_sequence_number = rtx.open_multimap_table(SATPOINT_TO_SEQUENCE_NUMBER)?;
     let sequence_number_to_inscription_entry =
@@ -1752,6 +1828,112 @@ impl Index {
         })
         .collect(),
     )
+  }
+
+  pub(crate) fn delete_transfer_log(&self) -> Result {
+    let wtx = self.database.begin_write().unwrap();
+    wtx.delete_multimap_table(HEIGHT_TO_SEQUENCE_NUMBER)?;
+    Ok(wtx.commit()?)
+  }
+
+  pub(crate) fn trim_transfer_log(&self, height: u32) -> Result {
+    let wtx = self.begin_write()?;
+    for pair in self
+      .database
+      .begin_read()?
+      .open_multimap_table(HEIGHT_TO_SEQUENCE_NUMBER)?
+      .range(..height)?
+    {
+      wtx
+        .open_multimap_table(HEIGHT_TO_SEQUENCE_NUMBER)?
+        .remove_all(pair?.0.value())?;
+    }
+    Ok(wtx.commit()?)
+  }
+
+  pub(crate) fn show_transfer_log_stats(&self) -> Result<(u64, Option<u32>, Option<u32>)> {
+    let rtx = self.database.begin_read().unwrap();
+    let table = rtx.open_multimap_table(HEIGHT_TO_SEQUENCE_NUMBER)?;
+    let mut iter = table.iter()?;
+
+    let rows = table.len()?;
+
+    let first = iter
+      .next()
+      .and_then(|result| result.ok())
+      .map(|(height, _id)| height.value());
+
+    let last = iter
+      .next_back()
+      .and_then(|result| result.ok())
+      .map(|(height, _id)| height.value());
+
+    if first.is_none() {
+      Ok((rows, None, None))
+    } else if last.is_none() {
+      Ok((rows, first, first))
+    } else {
+      Ok((rows, first, last))
+    }
+  }
+
+  pub(crate) fn get_children(&self) -> Result<Vec<(InscriptionId, InscriptionId)>> {
+    let mut result = Vec::new();
+
+    let rtx = self.database.begin_read().unwrap();
+    let sequence_number_to_inscription_entry = rtx
+      .open_table(SEQUENCE_NUMBER_TO_INSCRIPTION_ENTRY)
+      .unwrap();
+
+    for range in self
+      .database
+      .begin_read()?
+      .open_multimap_table(SEQUENCE_NUMBER_TO_CHILDREN)?
+      .iter()?
+    {
+      let (parent, children) = range?;
+      let parent = InscriptionEntry::load(sequence_number_to_inscription_entry.get(parent.value())?.unwrap().value()).id;
+      for child in children {
+        let child = InscriptionEntry::load(sequence_number_to_inscription_entry.get(child?.value())?.unwrap().value()).id;
+        result.push((parent, child));
+      }
+    }
+
+    Ok(result)
+  }
+
+  pub(crate) fn get_stats(&self) -> Result<(Option<u32>, Option<i32>, Option<i32>)> {
+    let rtx = self.database.begin_read().unwrap();
+
+    let height = rtx
+      .open_table(HEIGHT_TO_BLOCK_HASH)?
+      .iter()?
+      .next_back()
+      .and_then(|result| result.ok())
+      .map(|(height, _hash)| height.value());
+
+    let table = rtx.open_table(INSCRIPTION_NUMBER_TO_SEQUENCE_NUMBER)?;
+    let mut iter = table.iter()?;
+
+    let lowest_number = iter
+      .next()
+      .and_then(|result| result.ok())
+      .map(|(number, _id)| number.value());
+
+    let highest_number = iter
+      .next_back()
+      .and_then(|result| result.ok())
+      .map(|(number, _id)| number.value());
+
+    Ok((
+      height,
+      lowest_number,
+      if highest_number.is_none() {
+        lowest_number
+      } else {
+        highest_number
+      },
+    ))
   }
 
   pub(crate) fn get_inscription_entry(

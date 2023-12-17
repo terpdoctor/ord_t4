@@ -2,16 +2,24 @@ use super::*;
 
 pub(super) struct Batch {
   pub(super) commit_fee_rate: FeeRate,
+  pub(super) commit_only: bool,
+  pub(super) commitment: Option<OutPoint>,
+  pub(super) commitment_output: Option<GetRawTransactionResultVout>,
   pub(super) destinations: Vec<Address>,
+  pub(super) dump: bool,
   pub(super) dry_run: bool,
   pub(super) inscriptions: Vec<Inscription>,
+  pub(super) key: Option<String>,
   pub(super) mode: Mode,
+  pub(super) next_inscription: Option<Inscription>,
   pub(super) no_backup: bool,
+  pub(super) no_broadcast: bool,
   pub(super) no_limit: bool,
   pub(super) parent_info: Option<ParentInfo>,
   pub(super) postage: Amount,
   pub(super) reinscribe: bool,
   pub(super) reveal_fee_rate: FeeRate,
+  pub(super) reveal_input: Vec<OutPoint>,
   pub(super) satpoint: Option<SatPoint>,
 }
 
@@ -19,16 +27,24 @@ impl Default for Batch {
   fn default() -> Batch {
     Batch {
       commit_fee_rate: 1.0.try_into().unwrap(),
+      commit_only: false,
+      commitment: None,
+      commitment_output: None,
       destinations: Vec::new(),
+      dump: false,
       dry_run: false,
       inscriptions: Vec::new(),
+      key: None,
       mode: Mode::SharedOutput,
+      next_inscription: None,
       no_backup: false,
+      no_broadcast: false,
       no_limit: false,
       parent_info: None,
       postage: Amount::from_sat(10_000),
       reinscribe: false,
       reveal_fee_rate: 1.0.try_into().unwrap(),
+      reveal_input: Vec::new(),
       satpoint: None,
     }
   }
@@ -43,6 +59,7 @@ impl Batch {
     locked_utxos: &BTreeSet<OutPoint>,
     runic_utxos: BTreeSet<OutPoint>,
     utxos: &BTreeMap<OutPoint, Amount>,
+    force_input: Vec<OutPoint>,
   ) -> SubcommandResult {
     let wallet_inscriptions = index.get_inscriptions(utxos)?;
 
@@ -54,69 +71,118 @@ impl Batch {
     let (commit_tx, reveal_tx, recovery_key_pair, total_fees) = self
       .create_batch_inscription_transactions(
         wallet_inscriptions,
+        index,
         chain,
         locked_utxos.clone(),
         runic_utxos,
         utxos.clone(),
         commit_tx_change,
+        force_input,
       )?;
 
     if self.dry_run {
       return Ok(Box::new(self.output(
-        commit_tx.txid(),
-        reveal_tx.txid(),
+        if self.commitment.is_some() {
+          None
+        } else {
+          Some(commit_tx.txid())
+        },
+        if self.commit_only {
+          None
+        } else {
+          Some(reveal_tx.txid())
+        },
+        None,
+        None,
+        None,
         total_fees,
         self.inscriptions.clone(),
       )));
     }
 
-    let signed_commit_tx = client
+    let signed_commit_tx = if self.commitment.is_some() {
+      Vec::new()
+    } else {
+      client
       .sign_raw_transaction_with_wallet(&commit_tx, None, None)?
-      .hex;
+      .hex
+    };
 
-    let signed_reveal_tx = if self.parent_info.is_some() {
+    let mut reveal_input_info = Vec::new();
+
+    if self.parent_info.is_some() {
+      for (vout, output) in commit_tx.output.iter().enumerate() {
+        reveal_input_info.push(SignRawTransactionInput {
+          txid: commit_tx.txid(),
+          vout: vout.try_into().unwrap(),
+          script_pub_key: output.script_pubkey.clone(),
+          redeem_script: None,
+          amount: Some(Amount::from_sat(output.value)),
+        });
+      }
+    }
+
+    for input in &self.reveal_input {
+      let output = index.get_transaction(input.txid)?.unwrap().output[input.vout as usize].clone();
+      reveal_input_info.push(SignRawTransactionInput {
+        txid: input.txid,
+        vout: input.vout,
+        script_pub_key: output.script_pubkey.clone(),
+        redeem_script: None,
+        amount: Some(Amount::from_sat(output.value)),
+      });
+    }
+
+    let signed_reveal_tx = if reveal_input_info.is_empty() {
+      bitcoin::consensus::encode::serialize(&reveal_tx)
+    } else {
       client
         .sign_raw_transaction_with_wallet(
           &reveal_tx,
-          Some(
-            &commit_tx
-              .output
-              .iter()
-              .enumerate()
-              .map(|(vout, output)| SignRawTransactionInput {
-                txid: commit_tx.txid(),
-                vout: vout.try_into().unwrap(),
-                script_pub_key: output.script_pubkey.clone(),
-                redeem_script: None,
-                amount: Some(Amount::from_sat(output.value)),
-              })
-              .collect::<Vec<SignRawTransactionInput>>(),
-          ),
+          Some(&reveal_input_info),
           None,
         )?
         .hex
-    } else {
-      bitcoin::consensus::encode::serialize(&reveal_tx)
     };
 
-    if !self.no_backup {
+    if !self.no_backup && self.key.is_none() {
       Self::backup_recovery_key(client, recovery_key_pair, chain.network())?;
     }
 
-    let commit = client.send_raw_transaction(&signed_commit_tx)?;
+    let (commit, reveal) = if self.no_broadcast {
+      (if self.commitment.is_some() { None }
+      	  else { Some(client.decode_raw_transaction(&signed_commit_tx, None)?.txid) },
+       if self.commit_only { None }
+       	  else { Some(client.decode_raw_transaction(&signed_reveal_tx, None)?.txid) })
+    } else {
+    let commit = if self.commitment.is_some() {
+      None
+    } else {
+      Some(client.send_raw_transaction(&signed_commit_tx)?)
+    };
 
-    let reveal = match client.send_raw_transaction(&signed_reveal_tx) {
-      Ok(txid) => txid,
-      Err(err) => {
-        return Err(anyhow!(
-        "Failed to send reveal transaction: {err}\nCommit tx {commit} will be recovered once mined"
+    let reveal = if self.commit_only {
+      None
+    } else {
+    match client.send_raw_transaction(&signed_reveal_tx) {
+    Ok(txid) => Some(txid),
+    Err(err) => {
+      return Err(anyhow!(
+        format!("Failed to send reveal transaction: {err}{}", if commit.is_some() { format!("\nCommit tx {:?} will be recovered once mined", commit) } else { "".to_string() })
       ))
-      }
+    }
+    }
+    };
+
+    (commit, reveal)
     };
 
     Ok(Box::new(self.output(
       commit,
       reveal,
+      if self.dump && self.commitment.is_none() { Some(signed_commit_tx.raw_hex()) } else { None },
+      if self.dump && !self.commit_only { Some(signed_reveal_tx.raw_hex()) } else { None },
+      if self.dump { Some(Self::get_recovery_key(&client, recovery_key_pair, chain.network())?.to_string()) } else { None },
       total_fees,
       self.inscriptions.clone(),
     )))
@@ -124,8 +190,11 @@ impl Batch {
 
   fn output(
     &self,
-    commit: Txid,
-    reveal: Txid,
+    commit: Option<Txid>,
+    reveal: Option<Txid>,
+    commit_hex: Option<String>,
+    reveal_hex: Option<String>,
+    recovery_descriptor: Option<String>,
     total_fees: u64,
     inscriptions: Vec<Inscription>,
   ) -> super::Output {
@@ -155,21 +224,26 @@ impl Batch {
         Mode::SeparateOutputs | Mode::SameSat => 0,
       };
 
+      if !self.commit_only {
       inscriptions_output.push(InscriptionInfo {
         id: InscriptionId {
-          txid: reveal,
+          txid: reveal.unwrap(),
           index,
         },
         location: SatPoint {
-          outpoint: OutPoint { txid: reveal, vout },
+          outpoint: OutPoint { txid: reveal.unwrap(), vout },
           offset,
         },
       });
     }
+    }
 
     super::Output {
       commit,
+      commit_hex,
       reveal,
+      reveal_hex,
+      recovery_descriptor,
       total_fees,
       parent: self.parent_info.clone().map(|info| info.id),
       inscriptions: inscriptions_output,
@@ -179,17 +253,23 @@ impl Batch {
   pub(crate) fn create_batch_inscription_transactions(
     &self,
     wallet_inscriptions: BTreeMap<SatPoint, InscriptionId>,
+    index: &Index,
     chain: Chain,
     locked_utxos: BTreeSet<OutPoint>,
     runic_utxos: BTreeSet<OutPoint>,
     mut utxos: BTreeMap<OutPoint, Amount>,
     change: [Address; 2],
+    force_input: Vec<OutPoint>,
   ) -> Result<(Transaction, Transaction, TweakedKeyPair, u64)> {
     if let Some(parent_info) = &self.parent_info {
       assert!(self
         .inscriptions
         .iter()
         .all(|inscription| inscription.parent().unwrap() == parent_info.id))
+    }
+
+    if self.next_inscription.is_some() && self.commitment.is_none() {
+      return Err(anyhow!("--next-file doesn't work without --commitment"));
     }
 
     match self.mode {
@@ -210,7 +290,9 @@ impl Batch {
       ),
     }
 
-    let satpoint = if let Some(satpoint) = self.satpoint {
+    let satpoint = if self.commitment.is_some() {
+      SatPoint::from_str("0000000000000000000000000000000000000000000000000000000000000000:0:0")?
+    } else if let Some(satpoint) = self.satpoint {
       satpoint
     } else {
       let inscribed_utxos = wallet_inscriptions
@@ -260,7 +342,15 @@ impl Batch {
     }
 
     let secp256k1 = Secp256k1::new();
-    let key_pair = UntweakedKeyPair::new(&secp256k1, &mut rand::thread_rng());
+    let key_pair = if self.key.is_some() {
+      secp256k1::KeyPair::from_secret_key(&secp256k1, &PrivateKey::from_wif(&self.key.clone().unwrap())?.inner)
+    } else {
+      let key_pair = UntweakedKeyPair::new(&secp256k1, &mut rand::thread_rng());
+      if self.commit_only {
+        eprintln!("use --key {} to reveal this commitment", PrivateKey::new(key_pair.secret_key(), chain.network()).to_wif());
+      }
+      key_pair
+    };
     let (public_key, _parity) = XOnlyPublicKey::from_keypair(&key_pair);
 
     let reveal_script = Inscription::append_batch_reveal_script(
@@ -282,6 +372,26 @@ impl Batch {
 
     let commit_tx_address = Address::p2tr_tweaked(taproot_spend_info.output_key(), chain.network());
 
+    let reveal_change_address = if self.next_inscription.is_some() {
+      let next_inscriptions = vec![self.next_inscription.clone().unwrap()];
+      let next_reveal_script = Inscription::append_batch_reveal_script(
+        &next_inscriptions,
+        ScriptBuf::builder()
+          .push_slice(public_key.serialize())
+          .push_opcode(opcodes::all::OP_CHECKSIG),
+      );
+
+      let next_taproot_spend_info = TaprootBuilder::new()
+        .add_leaf(0, next_reveal_script.clone())
+        .expect("adding leaf should work")
+        .finalize(&secp256k1, public_key)
+        .expect("finalizing taproot builder should work");
+
+      Address::p2tr_tweaked(next_taproot_spend_info.output_key(), chain.network())
+    } else {
+      change[0].clone()
+    };
+
     let total_postage = match self.mode {
       Mode::SameSat => self.postage,
       Mode::SharedOutput | Mode::SeparateOutputs => {
@@ -289,7 +399,8 @@ impl Batch {
       }
     };
 
-    let mut reveal_inputs = vec![OutPoint::null()];
+    let mut reveal_inputs = self.reveal_input.clone();
+    reveal_inputs.insert(0, OutPoint::null());
     let mut reveal_outputs = self
       .destinations
       .iter()
@@ -321,6 +432,13 @@ impl Batch {
 
     let commit_input = if self.parent_info.is_some() { 1 } else { 0 };
 
+    if self.commitment.is_some() {
+      reveal_outputs.push(TxOut {
+        script_pubkey: reveal_change_address.script_pubkey(),
+        value: 0,
+      });
+    }
+
     let (_, reveal_fee) = Self::build_reveal_transaction(
       &control_block,
       self.reveal_fee_rate,
@@ -330,7 +448,15 @@ impl Batch {
       &reveal_script,
     );
 
-    let unsigned_commit_tx = TransactionBuilder::new(
+    let unsigned_commit_tx = if self.commitment.is_some() {
+      Transaction {
+        version: 0,
+        lock_time: LockTime::ZERO,
+        input: vec![],
+        output: vec![],
+      }
+    } else {
+      TransactionBuilder::new(
       satpoint,
       wallet_inscriptions,
       utxos.clone(),
@@ -339,20 +465,47 @@ impl Batch {
       commit_tx_address.clone(),
       change,
       self.commit_fee_rate,
-      Target::Value(reveal_fee + total_postage),
-    )
-    .build_transaction()?;
+      if self.commit_only {
+        Target::NoChange(reveal_fee + total_postage)
+      } else {
+        Target::Value(reveal_fee + total_postage)
+      },
+      force_input,
+      )
+        .build_transaction()?
+    };
 
-    let (vout, _commit_output) = unsigned_commit_tx
-      .output
-      .iter()
-      .enumerate()
-      .find(|(_vout, output)| output.script_pubkey == commit_tx_address.script_pubkey())
-      .expect("should find sat commit/inscription output");
+    let mut reveal_input_value = Amount::from_sat(0);
+    let mut reveal_input_prevouts = Vec::new();
+    for i in &self.reveal_input {
+      let output = index.get_transaction(i.txid)?.unwrap().output[i.vout as usize].clone();
+      reveal_input_value += Amount::from_sat(output.value);
+      reveal_input_prevouts.push(output.clone());
+      utxos.insert(*i, Amount::from_sat(output.value));
+    }
 
-    reveal_inputs[commit_input] = OutPoint {
-      txid: unsigned_commit_tx.txid(),
-      vout: vout.try_into().unwrap(),
+    let vout = if self.commitment.is_some() {
+      reveal_inputs[commit_input] = self.commitment.unwrap();
+
+      if let Some(last) = reveal_outputs.last_mut() {
+        (*last).value = (reveal_input_value + self.commitment_output.clone().unwrap().value - total_postage - reveal_fee).to_sat();
+      }
+
+      0
+    } else {
+      let (vout, _commit_output) = unsigned_commit_tx
+        .output
+        .iter()
+        .enumerate()
+        .find(|(_vout, output)| output.script_pubkey == commit_tx_address.script_pubkey())
+        .expect("should find sat commit/inscription output");
+
+      reveal_inputs[commit_input] = OutPoint {
+        txid: unsigned_commit_tx.txid(),
+        vout: vout.try_into().unwrap(),
+      };
+
+      vout
     };
 
     let (mut reveal_tx, _fee) = Self::build_reveal_transaction(
@@ -373,11 +526,22 @@ impl Batch {
       bail!("commit transaction output would be dust");
     }
 
-    let mut prevouts = vec![unsigned_commit_tx.output[vout].clone()];
+    let mut prevouts = vec![
+      if self.commitment.is_some() {
+        TxOut {
+          value: self.commitment_output.clone().unwrap().value.to_sat(),
+          script_pubkey: self.commitment_output.clone().unwrap().script_pub_key.script()?
+        }
+      } else {
+        unsigned_commit_tx.output[vout].clone()
+      }
+    ];
 
     if let Some(parent_info) = self.parent_info.clone() {
       prevouts.insert(0, parent_info.tx_out);
     }
+
+    prevouts.extend(reveal_input_prevouts);
 
     let mut sighash_cache = SighashCache::new(&mut reveal_tx);
 
@@ -432,16 +596,44 @@ impl Batch {
 
     utxos.insert(
       reveal_tx.input[commit_input].previous_output,
+      if self.commitment.is_some() {
+        self.commitment_output.clone().unwrap().value
+      } else {
       Amount::from_sat(
         unsigned_commit_tx.output[reveal_tx.input[commit_input].previous_output.vout as usize]
           .value,
-      ),
+      )
+      },
     );
 
     let total_fees =
-      Self::calculate_fee(&unsigned_commit_tx, &utxos) + Self::calculate_fee(&reveal_tx, &utxos);
+      if self.commitment.is_some() {
+        0
+      } else {
+        Self::calculate_fee(&unsigned_commit_tx, &utxos)
+      } + if self.commit_only {
+        0
+      } else {
+        Self::calculate_fee(&reveal_tx, &utxos)
+      };
 
     Ok((unsigned_commit_tx, reveal_tx, recovery_key_pair, total_fees))
+  }
+
+  fn get_recovery_key(
+    client: &Client,
+    recovery_key_pair: TweakedKeyPair,
+    network: Network,
+  ) -> Result<String> {
+    let recovery_private_key =
+      PrivateKey::new(recovery_key_pair.to_inner().secret_key(), network).to_wif();
+    Ok(format!(
+      "rawtr({})#{}",
+      recovery_private_key,
+      client
+        .get_descriptor_info(&format!("rawtr({})", recovery_private_key))?
+        .checksum
+    ))
   }
 
   fn backup_recovery_key(

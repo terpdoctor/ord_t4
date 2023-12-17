@@ -42,9 +42,11 @@ pub(super) struct InscriptionUpdater<'a, 'db, 'tx> {
   pub(super) cursed_inscription_count: u64,
   pub(super) flotsam: Vec<Flotsam>,
   pub(super) height: u32,
+  pub(super) height_to_sequence_number: &'a mut Option<MultimapTable<'db, 'tx, u32, u32>>,
   pub(super) home_inscription_count: u64,
   pub(super) home_inscriptions: &'a mut Table<'db, 'tx, u32, InscriptionIdValue>,
   pub(super) id_to_sequence_number: &'a mut Table<'db, 'tx, InscriptionIdValue, u32>,
+  pub(super) ignore_cursed: bool,
   pub(super) inscription_number_to_sequence_number: &'a mut Table<'db, 'tx, i32, u32>,
   pub(super) lost_sats: u64,
   pub(super) next_sequence_number: u32,
@@ -135,7 +137,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
           index: id_counter,
         };
 
-        let curse = if self.height >= self.chain.jubilee_height() {
+        let curse = if self.ignore_cursed || self.height >= self.chain.jubilee_height() {
           None
         } else if inscription.payload.unrecognized_even_field {
           Some(Curse::UnrecognizedEvenField)
@@ -363,17 +365,22 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
     let inscription_id = flotsam.inscription_id;
     let (unbound, sequence_number) = match flotsam.origin {
       Origin::Old { old_satpoint } => {
+        let sequence_number =
+          self
+            .id_to_sequence_number
+            .get(&inscription_id.store())?
+            .unwrap()
+            .value();
+        if let Some(height_to_sequence_number) = &mut self.height_to_sequence_number {
+          height_to_sequence_number.insert(&self.height, &sequence_number)?;
+        }
         self
           .satpoint_to_sequence_number
           .remove_all(&old_satpoint.store())?;
 
         (
           false,
-          self
-            .id_to_sequence_number
-            .get(&inscription_id.store())?
-            .unwrap()
-            .value(),
+          sequence_number,
         )
       }
       Origin::New {
