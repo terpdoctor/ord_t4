@@ -1,6 +1,12 @@
 Changelog
 =========
 
+[0.13.1-gm2](https://github.com/gmart7t2/ord/releases/tag/0.13.1-gm2) - 2023-12-18
+----------------------------------------------------------------------------------
+
+### Fixed
+- Include HEIGHT_TO_SEQUENCE_NUMBER in `index info` report.
+
 [0.13.1-gm1](https://github.com/gmart7t2/ord/releases/tag/0.13.1-gm1) - 2023-12-16
 ----------------------------------------------------------------------------------
 
