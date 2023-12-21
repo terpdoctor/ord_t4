@@ -1,6 +1,12 @@
 Changelog
 =========
 
+[0.13.1-gm4](https://github.com/gmart7t2/ord/releases/tag/0.13.1-gm4) - 2023-12-21
+----------------------------------------------------------------------------------
+
+### Added
+- Use `--change` flag to specify the change address for `wallet inscribe` and `wallet send`.
+
 [0.13.1-gm3](https://github.com/gmart7t2/ord/releases/tag/0.13.1-gm3) - 2023-12-19
 ----------------------------------------------------------------------------------
 
