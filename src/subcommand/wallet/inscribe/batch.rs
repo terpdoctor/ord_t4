@@ -60,12 +60,16 @@ impl Batch {
     runic_utxos: BTreeSet<OutPoint>,
     utxos: &BTreeMap<OutPoint, Amount>,
     force_input: Vec<OutPoint>,
+    change: Option<Address>,
   ) -> SubcommandResult {
     let wallet_inscriptions = index.get_inscriptions(utxos)?;
 
     let commit_tx_change = [
       get_change_address(client, chain)?,
-      get_change_address(client, chain)?,
+      match change {
+        Some(change) => change,
+        None => get_change_address(client, chain)?,
+      },
     ];
 
     let (commit_tx, reveal_tx, recovery_key_pair, total_fees) = self

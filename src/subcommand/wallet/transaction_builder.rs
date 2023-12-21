@@ -248,10 +248,7 @@ impl TransactionBuilder {
       self.outputs.insert(
         0,
         (
-          self
-            .unused_change_addresses
-            .pop()
-            .expect("not enough change addresses"),
+          self.unused_change_addresses[0].clone(),
           Amount::from_sat(sat_offset),
         ),
       );
@@ -375,10 +372,7 @@ impl TransactionBuilder {
         tprintln!("stripped {} sats", (value - target).to_sat());
         self.outputs.last_mut().expect("no outputs found").1 = target;
         self.outputs.push((
-          self
-            .unused_change_addresses
-            .pop()
-            .expect("not enough change addresses"),
+          self.unused_change_addresses[1].clone(),
           value - target,
         ));
       }

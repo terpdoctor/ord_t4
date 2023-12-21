@@ -80,6 +80,8 @@ pub(crate) struct Inscribe {
   pub(crate) utxo: Vec<OutPoint>,
   #[arg(long, help = "Only spend outpoints given with --utxo")]
   pub(crate) coin_control: bool,
+  #[arg(long, help = "Send any change output to <CHANGE>.")]
+  pub(crate) change: Option<Address<NetworkUnchecked>>,
   #[arg(
     long,
     help = "Use <COMMIT_FEE_RATE> sats/vbyte for commit transaction.\nDefaults to <FEE_RATE> if unset."
@@ -203,6 +205,11 @@ impl Inscribe {
 
     let chain = options.chain();
 
+    let change = match self.change {
+      Some(change) => Some(change.require_network(chain.network())?),
+      None => None,
+    };
+
     let postage;
     let destinations;
     let inscriptions;
@@ -320,7 +327,7 @@ impl Inscribe {
       reveal_input: self.reveal_input,
       satpoint,
     }
-    .inscribe(chain, &index, &client, &locked_utxos, runic_utxos, &utxos, self.commit_input)
+    .inscribe(chain, &index, &client, &locked_utxos, runic_utxos, &utxos, self.commit_input, change)
   }
 
   fn parse_metadata(cbor: Option<PathBuf>, json: Option<PathBuf>) -> Result<Option<Vec<u8>>> {
