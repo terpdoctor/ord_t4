@@ -377,9 +377,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
             .get(&inscription_id.store())?
             .unwrap()
             .value();
-        if let Some(height_to_sequence_number) = &mut self.height_to_sequence_number {
-          height_to_sequence_number.insert(&self.height, &sequence_number)?;
-        }
+        let mut skip_this_transfer = false;
         if let Some(sequence_number_to_transfers) = &mut self.sequence_number_to_transfers {
           if !self.index_only_first_transfer || sequence_number_to_transfers.get(sequence_number)?.next().is_none() {
             sequence_number_to_transfers.insert(&sequence_number, TransferEntry {
@@ -388,6 +386,13 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
               new_satpoint,
               old_satpoint,
             }.store())?;
+          } else {
+            skip_this_transfer = true;
+          }
+        }
+        if !skip_this_transfer {
+          if let Some(height_to_sequence_number) = &mut self.height_to_sequence_number {
+            height_to_sequence_number.insert(&self.height, &sequence_number)?;
           }
         }
         self
