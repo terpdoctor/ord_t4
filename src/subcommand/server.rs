@@ -1000,28 +1000,7 @@ impl Server {
       let satpoint = index
         .get_inscription_satpoint_by_id(inscription_id)?
         .ok_or_not_found(|| format!("inscription {inscription_id}"))?;
-      let address = if satpoint.outpoint == unbound_outpoint() {
-        String::from("unbound")
-      } else {
-        if !tx_cache.contains_key(&satpoint.outpoint.txid) {
-          tx_cache.insert(satpoint.outpoint.txid,
-                          index
-                          .get_transaction(satpoint.outpoint.txid)?
-                          .ok_or_not_found(|| format!("inscription {inscription_id} current transaction"))?);
-        }
-        
-        let output = tx_cache.get(&satpoint.outpoint.txid).unwrap().clone()
-          .output
-          .into_iter()
-          .nth(satpoint.outpoint.vout.try_into().unwrap())
-          .ok_or_not_found(|| format!("inscription {inscription_id} current transaction output"))?;
-        if let Ok(address) = chain.address_from_script(&output.script_pubkey) {
-          address.to_string()
-        } else {
-          String::from("error")
-        }
-      };
-
+      let address = Self::satpoint_to_address(chain, &index, satpoint, &mut tx_cache)?;
       ret += &format!("{} {}\n", inscription_id, address);
     }
 
@@ -1149,13 +1128,16 @@ impl Server {
     let address = if satpoint.outpoint == unbound_outpoint() {
       String::from("unbound")
     } else {
-      if !tx_cache.contains_key(&satpoint.outpoint.txid) {
-        tx_cache.insert(satpoint.outpoint.txid,
-                        index
-                        .get_transaction(satpoint.outpoint.txid)?.unwrap());
+      let txid = satpoint.outpoint.txid;
+      if !tx_cache.contains_key(&txid) {
+        if let Ok(tx) = index.get_transaction(txid) {
+          tx_cache.insert(txid, tx.unwrap());
+        } else {
+          return Ok(String::from("lost"));
+        }
       }
       
-      let output = tx_cache.get(&satpoint.outpoint.txid).unwrap().clone()
+      let output = tx_cache.get(&txid).unwrap().clone()
         .output
         .into_iter()
         .nth(satpoint.outpoint.vout.try_into().unwrap()).unwrap();
