@@ -3,13 +3,13 @@ use super::*;
 #[derive(Boilerplate)]
 pub(crate) struct TransfersHtml {
   height: Height,
-  data: Vec<(InscriptionId, Vec<(String, SatPoint, String, SatPoint)>)>,
+  data: Vec<(InscriptionId, Vec<(String, OutPoint)>)>,
 }
 
 impl TransfersHtml {
   pub(crate) fn new(
     height: Height,
-    data: Vec<(InscriptionId, Vec<(String, SatPoint, String, SatPoint)>)>,
+    data: Vec<(InscriptionId, Vec<(String, OutPoint)>)>,
   ) -> Self {
     Self {
       height,
@@ -20,10 +20,8 @@ impl TransfersHtml {
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct TransferJson {
-  from_address: String,
-  from_satpoint: SatPoint,
-  to_address: String,
-  to_satpoint: SatPoint,
+  address: String,
+  outpoint: OutPoint,
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -34,15 +32,13 @@ pub struct TransfersJson {
 
 impl TransfersJson {
   pub(crate) fn new(
-    data: (InscriptionId, Vec<(String, SatPoint, String, SatPoint)>),
+    data: (InscriptionId, Vec<(String, OutPoint)>),
   ) -> Self {
     Self {
       inscriptionid: data.0,
       transfers: data.1.iter().map(|transfer| TransferJson {
-        from_address: transfer.0.clone(),
-        from_satpoint: transfer.1,
-        to_address: transfer.2.clone(),
-        to_satpoint: transfer.3,
+        address: transfer.0.clone(),
+        outpoint: transfer.1,
       }).collect()
     }
   }

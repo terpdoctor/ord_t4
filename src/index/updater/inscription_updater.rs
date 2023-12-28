@@ -56,10 +56,10 @@ pub(super) struct InscriptionUpdater<'a, 'db, 'tx> {
   pub(super) reward: u64,
   pub(super) sat_to_sequence_number: &'a mut MultimapTable<'db, 'tx, u64, u32>,
   pub(super) satpoint_to_sequence_number:
-    &'a mut MultimapTable<'db, 'tx, SatPointValue, u32>,
+    &'a mut MultimapTable<'db, 'tx, &'static SatPointValue, u32>,
   pub(super) sequence_number_to_children: &'a mut MultimapTable<'db, 'tx, u32, u32>,
   pub(super) sequence_number_to_entry: &'a mut Table<'db, 'tx, u32, InscriptionEntryValue>,
-  pub(super) sequence_number_to_satpoint: &'a mut Table<'db, 'tx, u32, SatPointValue>,
+  pub(super) sequence_number_to_satpoint: &'a mut Table<'db, 'tx, u32, &'static SatPointValue>,
   pub(super) sequence_number_to_transfers: &'a mut Option<MultimapTable<'db, 'tx, u32, TransferEntryValue>>,
   pub(super) timestamp: u32,
   pub(super) tx_count: u32,
@@ -380,18 +380,20 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
         let mut skip_this_transfer = false;
         if let Some(sequence_number_to_transfers) = &mut self.sequence_number_to_transfers {
           if !self.index_only_first_transfer || sequence_number_to_transfers.get(sequence_number)?.next().is_none() {
+            // eprintln!("insert seq {} point {}", sequence_number, new_satpoint.outpoint);
             sequence_number_to_transfers.insert(&sequence_number, TransferEntry {
               height: self.height,
               tx_count: self.tx_count,
-              new_satpoint,
-              old_satpoint,
+              outpoint: new_satpoint.outpoint,
             }.store())?;
           } else {
+            // eprintln!("skip seq {}", sequence_number);
             skip_this_transfer = true;
           }
         }
         if !skip_this_transfer {
           if let Some(height_to_sequence_number) = &mut self.height_to_sequence_number {
+            // eprintln!("insert height {} seq {}", self.height, sequence_number);
             height_to_sequence_number.insert(&self.height, &sequence_number)?;
           }
         }

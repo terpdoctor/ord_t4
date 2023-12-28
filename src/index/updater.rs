@@ -640,7 +640,7 @@ impl<'index> Updater<'_> {
     &mut self,
     tx: &Transaction,
     txid: Txid,
-    sat_to_satpoint: &mut Table<u64, SatPointValue>,
+    sat_to_satpoint: &mut Table<u64, &SatPointValue>,
     input_sat_ranges: &mut VecDeque<(u64, u64)>,
     sat_ranges_written: &mut u64,
     outputs_traversed: &mut u64,

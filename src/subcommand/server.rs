@@ -1000,7 +1000,7 @@ impl Server {
       let satpoint = index
         .get_inscription_satpoint_by_id(inscription_id)?
         .ok_or_not_found(|| format!("inscription {inscription_id}"))?;
-      let address = Self::satpoint_to_address(chain, &index, satpoint, &mut tx_cache)?;
+      let address = Self::outpoint_to_address(chain, &index, satpoint.outpoint, &mut tx_cache)?;
       ret += &format!("{} {}\n", inscription_id, address);
     }
 
@@ -1099,10 +1099,9 @@ impl Server {
           continue;
         }
 
-        let old_address = Self::satpoint_to_address(server_config.chain, &index, transfer.old_satpoint, &mut tx_cache)?;
-        let new_address = Self::satpoint_to_address(server_config.chain, &index, transfer.new_satpoint, &mut tx_cache)?;
+        let address = Self::outpoint_to_address(server_config.chain, &index, transfer.outpoint, &mut tx_cache)?;
 
-        transfers_vec.push((old_address, transfer.old_satpoint, new_address, transfer.new_satpoint));
+        transfers_vec.push((address, transfer.outpoint));
       }
 
       if !transfers_vec.is_empty() {
@@ -1119,16 +1118,16 @@ impl Server {
     })
   }
 
-  fn satpoint_to_address(
+  fn outpoint_to_address(
     chain: Chain,
     index: &Arc<Index>,
-    satpoint: SatPoint,
+    outpoint: OutPoint,
     tx_cache: &mut HashMap<Txid, Transaction>) -> Result<String> {
 
-    let address = if satpoint.outpoint == unbound_outpoint() {
+    let address = if outpoint == unbound_outpoint() {
       String::from("unbound")
     } else {
-      let txid = satpoint.outpoint.txid;
+      let txid = outpoint.txid;
       if !tx_cache.contains_key(&txid) {
         if let Ok(tx) = index.get_transaction(txid) {
           tx_cache.insert(txid, tx.unwrap());
@@ -1140,7 +1139,7 @@ impl Server {
       let output = tx_cache.get(&txid).unwrap().clone()
         .output
         .into_iter()
-        .nth(satpoint.outpoint.vout.try_into().unwrap()).unwrap();
+        .nth(outpoint.vout.try_into().unwrap()).unwrap();
       if let Ok(address) = chain.address_from_script(&output.script_pubkey) {
         address.to_string()
       } else {
