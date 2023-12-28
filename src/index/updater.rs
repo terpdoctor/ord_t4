@@ -440,6 +440,7 @@ impl<'index> Updater<'_> {
       blessed_inscription_count,
       chain: self.index.options.chain(),
       cursed_inscription_count,
+      filter_metaprotocol: index.options.filter_metaprotocol.clone(),
       flotsam: Vec::new(),
       height: self.height,
       height_to_sequence_number: &mut height_to_sequence_number,

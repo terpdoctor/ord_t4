@@ -33,6 +33,8 @@ pub(crate) struct Options {
     help = "Set index cache to <DB_CACHE_SIZE> bytes. By default takes 1/4 of available RAM."
   )]
   pub(crate) db_cache_size: Option<usize>,
+  #[arg(long, help = "Only index inscriptions that have a metaprotocol that starts with the given string.")]
+  pub(crate) filter_metaprotocol: Option<String>,
   #[arg(
     long,
     help = "Don't look for inscriptions below <FIRST_INSCRIPTION_HEIGHT>."

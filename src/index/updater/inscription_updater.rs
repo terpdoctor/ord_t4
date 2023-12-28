@@ -40,6 +40,7 @@ pub(super) struct InscriptionUpdater<'a, 'db, 'tx> {
   pub(super) blessed_inscription_count: u64,
   pub(super) chain: Chain,
   pub(super) cursed_inscription_count: u64,
+  pub(super) filter_metaprotocol: Option<String>,
   pub(super) flotsam: Vec<Flotsam>,
   pub(super) height: u32,
   pub(super) height_to_sequence_number: &'a mut Option<MultimapTable<'db, 'tx, u32, u32>>,
@@ -74,7 +75,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
     txid: Txid,
     input_sat_ranges: Option<&VecDeque<(u64, u64)>>,
   ) -> Result {
-    let mut envelopes = ParsedEnvelope::from_transaction(tx).into_iter().peekable();
+    let mut envelopes = ParsedEnvelope::from_transaction(tx, self.filter_metaprotocol.clone()).into_iter().peekable();
     let mut floating_inscriptions = Vec::new();
     let mut id_counter = 0;
     let mut inscribed_offsets = BTreeMap::new();
