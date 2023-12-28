@@ -26,6 +26,7 @@ pub(crate) use {
   server_config::ServerConfig,
   status::StatusHtml,
   transaction::TransactionHtml,
+  transfers::{TransfersJson, TransfersHtml},
 };
 
 pub mod block;
@@ -49,6 +50,7 @@ mod runes;
 pub mod sat;
 mod status;
 mod transaction;
+mod transfers;
 
 #[derive(Boilerplate)]
 pub(crate) struct PageHtml<T: PageContent> {

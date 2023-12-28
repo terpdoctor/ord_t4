@@ -47,6 +47,7 @@ pub(super) struct InscriptionUpdater<'a, 'db, 'tx> {
   pub(super) home_inscriptions: &'a mut Table<'db, 'tx, u32, InscriptionIdValue>,
   pub(super) id_to_sequence_number: &'a mut Table<'db, 'tx, InscriptionIdValue, u32>,
   pub(super) ignore_cursed: bool,
+  pub(super) index_only_first_transfer: bool,
   pub(super) inscription_number_to_sequence_number: &'a mut Table<'db, 'tx, i32, u32>,
   pub(super) lost_sats: u64,
   pub(super) next_sequence_number: u32,
@@ -54,11 +55,13 @@ pub(super) struct InscriptionUpdater<'a, 'db, 'tx> {
   pub(super) reward: u64,
   pub(super) sat_to_sequence_number: &'a mut MultimapTable<'db, 'tx, u64, u32>,
   pub(super) satpoint_to_sequence_number:
-    &'a mut MultimapTable<'db, 'tx, &'static SatPointValue, u32>,
+    &'a mut MultimapTable<'db, 'tx, SatPointValue, u32>,
   pub(super) sequence_number_to_children: &'a mut MultimapTable<'db, 'tx, u32, u32>,
   pub(super) sequence_number_to_entry: &'a mut Table<'db, 'tx, u32, InscriptionEntryValue>,
-  pub(super) sequence_number_to_satpoint: &'a mut Table<'db, 'tx, u32, &'static SatPointValue>,
+  pub(super) sequence_number_to_satpoint: &'a mut Table<'db, 'tx, u32, SatPointValue>,
+  pub(super) sequence_number_to_transfers: &'a mut Option<MultimapTable<'db, 'tx, u32, TransferEntryValue>>,
   pub(super) timestamp: u32,
+  pub(super) tx_count: u32,
   pub(super) unbound_inscriptions: u64,
   pub(super) value_cache: &'a mut HashMap<OutPoint, u64>,
   pub(super) value_receiver: &'a mut Receiver<u64>,
@@ -77,6 +80,8 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
     let mut inscribed_offsets = BTreeMap::new();
     let mut total_input_value = 0;
     let total_output_value = tx.output.iter().map(|txout| txout.value).sum::<u64>();
+
+    self.tx_count += 1;
 
     for (input_index, tx_in) in tx.input.iter().enumerate() {
       // skip subsidy since no inscriptions possible
@@ -373,6 +378,16 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
             .value();
         if let Some(height_to_sequence_number) = &mut self.height_to_sequence_number {
           height_to_sequence_number.insert(&self.height, &sequence_number)?;
+        }
+        if let Some(sequence_number_to_transfers) = &mut self.sequence_number_to_transfers {
+          if !self.index_only_first_transfer || sequence_number_to_transfers.get(sequence_number)?.next().is_none() {
+            sequence_number_to_transfers.insert(&sequence_number, TransferEntry {
+              height: self.height,
+              tx_count: self.tx_count,
+              new_satpoint,
+              old_satpoint,
+            }.store())?;
+          }
         }
         self
           .satpoint_to_sequence_number

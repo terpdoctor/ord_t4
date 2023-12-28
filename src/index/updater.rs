@@ -388,6 +388,11 @@ impl<'index> Updater<'_> {
     } else {
       None
     };
+    let mut sequence_number_to_transfers = if index.index_transfer_history {
+      Some(wtx.open_multimap_table(SEQUENCE_NUMBER_TO_TRANSFERS)?)
+    } else {
+      None
+    };
     let mut height_to_last_sequence_number = wtx.open_table(HEIGHT_TO_LAST_SEQUENCE_NUMBER)?;
     let mut home_inscriptions = wtx.open_table(HOME_INSCRIPTIONS)?;
     let mut inscription_id_to_sequence_number =
@@ -438,10 +443,12 @@ impl<'index> Updater<'_> {
       flotsam: Vec::new(),
       height: self.height,
       height_to_sequence_number: &mut height_to_sequence_number,
+      sequence_number_to_transfers: &mut sequence_number_to_transfers,
       home_inscription_count,
       home_inscriptions: &mut home_inscriptions,
       id_to_sequence_number: &mut inscription_id_to_sequence_number,
       ignore_cursed: index.options.ignore_cursed,
+      index_only_first_transfer: index.options.index_only_first_transfer,
       inscription_number_to_sequence_number: &mut inscription_number_to_sequence_number,
       lost_sats,
       next_sequence_number,
@@ -453,6 +460,7 @@ impl<'index> Updater<'_> {
       sequence_number_to_entry: &mut sequence_number_to_inscription_entry,
       sequence_number_to_satpoint: &mut sequence_number_to_satpoint,
       timestamp: block.header.time,
+      tx_count: 0,
       unbound_inscriptions,
       value_cache,
       value_receiver,
@@ -631,7 +639,7 @@ impl<'index> Updater<'_> {
     &mut self,
     tx: &Transaction,
     txid: Txid,
-    sat_to_satpoint: &mut Table<u64, &SatPointValue>,
+    sat_to_satpoint: &mut Table<u64, SatPointValue>,
     input_sat_ranges: &mut VecDeque<(u64, u64)>,
     sat_ranges_written: &mut u64,
     outputs_traversed: &mut u64,

@@ -2,7 +2,7 @@ use {
   self::{
     entry::{
       BlockHashValue, Entry, InscriptionEntry, InscriptionEntryValue, InscriptionIdValue,
-      OutPointValue, RuneEntryValue, RuneIdValue, SatPointValue, SatRange, TxidValue,
+      OutPointValue, RuneEntryValue, RuneIdValue, SatPointValue, SatRange, TransferEntry, TransferEntryValue, TxidValue,
     },
     reorg::*,
     runes::{Rune, RuneId},
@@ -54,10 +54,11 @@ macro_rules! define_multimap_table {
   };
 }
 
-define_multimap_table! { SATPOINT_TO_SEQUENCE_NUMBER, &SatPointValue, u32 }
+define_multimap_table! { SATPOINT_TO_SEQUENCE_NUMBER, SatPointValue, u32 }
 define_multimap_table! { SAT_TO_SEQUENCE_NUMBER, u64, u32 }
 define_multimap_table! { SEQUENCE_NUMBER_TO_CHILDREN, u32, u32 }
 define_multimap_table! { HEIGHT_TO_SEQUENCE_NUMBER, u32, u32 }
+define_multimap_table! { SEQUENCE_NUMBER_TO_TRANSFERS, u32, TransferEntryValue }
 define_table! { HEIGHT_TO_BLOCK_HASH, u32, &BlockHashValue }
 define_table! { HEIGHT_TO_LAST_SEQUENCE_NUMBER, u32, u32 }
 define_table! { HOME_INSCRIPTIONS, u32, InscriptionIdValue }
@@ -68,10 +69,10 @@ define_table! { OUTPOINT_TO_SAT_RANGES, &OutPointValue, &[u8] }
 define_table! { OUTPOINT_TO_VALUE, &OutPointValue, u64}
 define_table! { RUNE_ID_TO_RUNE_ENTRY, RuneIdValue, RuneEntryValue }
 define_table! { RUNE_TO_RUNE_ID, u128, RuneIdValue }
-define_table! { SAT_TO_SATPOINT, u64, &SatPointValue }
+define_table! { SAT_TO_SATPOINT, u64, SatPointValue }
 define_table! { SEQUENCE_NUMBER_TO_INSCRIPTION_ENTRY, u32, InscriptionEntryValue }
 define_table! { SEQUENCE_NUMBER_TO_RUNE, u32, u128 }
-define_table! { SEQUENCE_NUMBER_TO_SATPOINT, u32, &SatPointValue }
+define_table! { SEQUENCE_NUMBER_TO_SATPOINT, u32, SatPointValue }
 define_table! { STATISTIC_TO_COUNT, u64, u64 }
 define_table! { TRANSACTION_ID_TO_RUNE, &TxidValue, u128 }
 define_table! { WRITE_TRANSACTION_STARTING_BLOCK_COUNT_TO_TIMESTAMP, u32, u128 }
@@ -182,6 +183,7 @@ pub(crate) struct Index {
   index_runes: bool,
   index_sats: bool,
   index_transfers: bool,
+  index_transfer_history: bool,
   no_progress_bar: bool,
   options: Options,
   path: PathBuf,
@@ -293,6 +295,7 @@ impl Index {
         tx.open_multimap_table(SAT_TO_SEQUENCE_NUMBER)?;
         tx.open_multimap_table(SEQUENCE_NUMBER_TO_CHILDREN)?;
         tx.open_multimap_table(HEIGHT_TO_SEQUENCE_NUMBER)?;
+        tx.open_multimap_table(SEQUENCE_NUMBER_TO_TRANSFERS)?;
         tx.open_table(HEIGHT_TO_BLOCK_HASH)?;
         tx.open_table(HEIGHT_TO_LAST_SEQUENCE_NUMBER)?;
         tx.open_table(HOME_INSCRIPTIONS)?;
@@ -350,7 +353,8 @@ impl Index {
       height_limit: options.height_limit,
       index_runes,
       index_sats,
-      index_transfers: options.index_transfers,
+      index_transfers: options.index_transfers || options.index_transfer_history,
+      index_transfer_history: options.index_transfer_history,
       no_progress_bar: options.no_progress_bar,
       options: options.clone(),
       path,
@@ -568,6 +572,7 @@ impl Index {
     insert_multimap_table_info(&mut tables, &wtx, total_bytes, SAT_TO_SEQUENCE_NUMBER);
     insert_multimap_table_info(&mut tables, &wtx, total_bytes, SEQUENCE_NUMBER_TO_CHILDREN);
     insert_multimap_table_info(&mut tables, &wtx, total_bytes, HEIGHT_TO_SEQUENCE_NUMBER);
+    insert_multimap_table_info(&mut tables, &wtx, total_bytes, SEQUENCE_NUMBER_TO_TRANSFERS);
     insert_table_info(&mut tables, &wtx, total_bytes, HEIGHT_TO_BLOCK_HASH);
     insert_table_info(&mut tables, &wtx, total_bytes, HEIGHT_TO_BLOCK_HASH);
     insert_table_info(
@@ -724,7 +729,7 @@ impl Index {
       let sequence_number = entry.0.value();
       let entry = InscriptionEntry::load(entry.1.value());
       let satpoint = SatPoint::load(
-        *sequence_number_to_satpoint
+        sequence_number_to_satpoint
           .get(sequence_number)?
           .unwrap()
           .value(),
@@ -839,7 +844,7 @@ impl Index {
 
     for range in sat_to_satpoint.range(0..)? {
       let (sat, satpoint) = range?;
-      result.push((Sat(sat.value()), Entry::load(*satpoint.value())));
+      result.push((Sat(sat.value()), Entry::load(satpoint.value())));
     }
 
     Ok(result)
@@ -852,7 +857,7 @@ impl Index {
         .begin_read()?
         .open_table(SAT_TO_SATPOINT)?
         .get(&sat.n())?
-        .map(|satpoint| Entry::load(*satpoint.value())),
+        .map(|satpoint| Entry::load(satpoint.value())),
     )
   }
 
@@ -1234,6 +1239,25 @@ impl Index {
     Ok(Some(RuneEntry::load(entry.value()).spaced_rune()))
   }
 
+  pub(crate) fn get_transfers_by_sequence_number(
+    &self,
+    sequence_number: u32,
+  ) -> Result<Vec<TransferEntry>> {
+    Ok(self.database.begin_read()?
+       .open_multimap_table(SEQUENCE_NUMBER_TO_TRANSFERS)?
+       .get(sequence_number)?
+       .map(|transfer| Entry::load(transfer.unwrap().value()))
+       .collect())
+  }
+
+  pub(crate) fn get_sequence_numbers_by_height(&self, height: u32) -> Result<Vec<u32>> {
+    Ok(self.database.begin_read()?
+       .open_multimap_table(HEIGHT_TO_SEQUENCE_NUMBER)?
+       .get(height)?
+       .map(|seq| seq.unwrap().value())
+       .collect())
+  }
+
   pub(crate) fn get_inscription_ids_by_height(&self, height: u32) -> Result<Vec<InscriptionId>> {
     let mut ret = Vec::new();
 
@@ -1423,7 +1447,7 @@ impl Index {
     let satpoint = rtx
       .open_table(SEQUENCE_NUMBER_TO_SATPOINT)?
       .get(sequence_number)?
-      .map(|satpoint| Entry::load(*satpoint.value()));
+      .map(|satpoint| Entry::load(satpoint.value()));
 
     Ok(satpoint)
   }
@@ -2042,7 +2066,7 @@ impl Index {
   }
 
   fn inscriptions_on_output<'a: 'tx, 'tx>(
-    satpoint_to_sequence_number: &'a impl ReadableMultimapTable<&'static SatPointValue, u32>,
+    satpoint_to_sequence_number: &'a impl ReadableMultimapTable<SatPointValue, u32>,
     sequence_number_to_inscription_entry: &'a impl ReadableTable<u32, InscriptionEntryValue>,
     outpoint: OutPoint,
   ) -> Result<Vec<(SatPoint, InscriptionId)>> {
@@ -2060,7 +2084,7 @@ impl Index {
 
     let mut inscriptions = Vec::new();
 
-    for range in satpoint_to_sequence_number.range::<&[u8; 44]>(&start..=&end)? {
+    for range in satpoint_to_sequence_number.range::<(u128, u128, u64, u32)>(&start..=&end)? {
       let (satpoint, sequence_numbers) = range?;
       for sequence_number_result in sequence_numbers {
         let sequence_number = sequence_number_result?.value();
@@ -2069,7 +2093,7 @@ impl Index {
           .unwrap();
         inscriptions.push((
           sequence_number,
-          SatPoint::load(*satpoint.value()),
+          SatPoint::load(satpoint.value()),
           InscriptionEntry::load(entry.value()).id,
         ));
       }

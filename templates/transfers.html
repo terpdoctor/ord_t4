@@ -1,0 +1,13 @@
+<h1>Transfers in block {{ self.height }}</h1>
+<ul>
+%% for transfers in &self.data {
+  <li><a href="/inscription/{{transfers.0}}">{{transfers.0}}</a>
+  <ul>
+%%   for transfer in transfers.1.clone() {
+<li>{{transfer.0}} <!-- {{transfer.1}} --> ->
+    {{transfer.2}} <!-- {{transfer.3}} --> </li>
+%%   }
+  </ul>
+  </li>
+%% }
+</ul>

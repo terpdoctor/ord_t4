@@ -15,7 +15,7 @@ use {
       PreviewAudioHtml, PreviewCodeHtml, PreviewFontHtml, PreviewImageHtml, PreviewMarkdownHtml,
       PreviewModelHtml, PreviewPdfHtml, PreviewTextHtml, PreviewUnknownHtml, PreviewVideoHtml,
       RangeHtml, RareTxt, RuneHtml, RunesHtml, SatHtml, SatInscriptionJson, SatInscriptionsJson,
-      SatJson, StatusHtml, TransactionHtml,
+      SatJson, StatusHtml, TransactionHtml, TransfersJson, TransfersHtml,
     },
   },
   axum::{
@@ -335,6 +335,9 @@ impl Server {
         .route("/static/*path", get(Self::static_asset))
         .route("/stats", get(Self::stats))
         .route("/status", get(Self::status))
+        .route("/transfer_history/:height", get(Self::inscriptionid_history_from_height))
+        .route("/transfer_history/:height/:start", get(Self::inscriptionid_history_from_height_start))
+        .route("/transfer_history/:height/:start/:end", get(Self::inscriptionid_history_from_height_start_end))
         .route("/transfers/:height", get(Self::inscriptionids_from_height))
         .route("/transfers/:height/:start", get(Self::inscriptionids_from_height_start))
         .route("/transfers/:height/:start/:end", get(Self::inscriptionids_from_height_start_end))
@@ -1023,6 +1026,147 @@ impl Server {
     }
 
     Ok(ret)
+  }
+
+  async fn inscriptionid_history_from_height(
+    Extension(server_config): Extension<Arc<ServerConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(height): Path<u32>,
+    accept_json: AcceptJson,
+  ) -> ServerResult<Response> {
+    log::info!("GET /transfer_history/{height}");
+    Self::inscriptionid_history_from_height_inner(
+      server_config,
+      index.clone(),
+      height,
+      index.get_sequence_numbers_by_height(height)?,
+      accept_json,
+    ).await
+  }
+
+  async fn inscriptionid_history_from_height_start(
+    Extension(server_config): Extension<Arc<ServerConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(path): Path<(u32, usize)>,
+    accept_json: AcceptJson,
+  ) -> ServerResult<Response> {
+    let height = path.0;
+    let start = path.1;
+    log::info!("GET /transfer_history/{height}/{start}");
+
+    let sequence_numbers = index.get_sequence_numbers_by_height(height)?;
+    let end = sequence_numbers.len();
+
+    match start.cmp(&end) {
+      Ordering::Equal => Err(ServerError::BadRequest("range length == 0".to_string())),
+      Ordering::Greater => Err(ServerError::BadRequest("range length < 0".to_string())),
+      Ordering::Less => {
+        Self::inscriptionid_history_from_height_inner(
+          server_config,
+          index.clone(),
+          height,
+          sequence_numbers[start..end].to_vec(),
+          accept_json,
+        ).await
+      }
+    }
+  }
+
+  async fn inscriptionid_history_from_height_start_end(
+    Extension(server_config): Extension<Arc<ServerConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(path): Path<(u32, usize, usize)>,
+    accept_json: AcceptJson,
+  ) -> ServerResult<Response> {
+    let height = path.0;
+    let start = path.1;
+    let mut end = path.2;
+    log::info!("GET /transfer_history/{height}/{start}/{end}");
+
+    let sequence_numbers = index.get_sequence_numbers_by_height(height)?;
+    end = usize::min(end, sequence_numbers.len());
+
+    match start.cmp(&end) {
+      Ordering::Equal => Err(ServerError::BadRequest("range length == 0".to_string())),
+      Ordering::Greater => Err(ServerError::BadRequest("range length < 0".to_string())),
+      Ordering::Less => {
+        Self::inscriptionid_history_from_height_inner(server_config,
+                                                      index.clone(),
+                                                      height,
+                                                      sequence_numbers[start..end].to_vec(),
+                                                      accept_json,
+        ).await
+      }
+    }
+  }
+
+  async fn inscriptionid_history_from_height_inner(
+    server_config: Arc<ServerConfig>,
+    index: Arc<Index>,
+    height: u32,
+    sequence_numbers: Vec<u32>,
+    accept_json: AcceptJson,
+  ) -> ServerResult<Response> {
+    let mut ret = Vec::new();
+    let mut tx_cache = HashMap::new();
+
+    for sequence_number in sequence_numbers {
+      let inscription_id = index.get_inscription_id_by_sequence_number(sequence_number)?.unwrap();
+      let mut transfers_vec = Vec::new();
+      let transfers = index.get_transfers_by_sequence_number(sequence_number)?;
+      for transfer in transfers {
+        sleep(Duration::from_millis(0)).await;
+        if transfer.height != height {
+          continue;
+        }
+
+        let old_address = Self::satpoint_to_address(server_config.chain, &index, transfer.old_satpoint, &mut tx_cache)?;
+        let new_address = Self::satpoint_to_address(server_config.chain, &index, transfer.new_satpoint, &mut tx_cache)?;
+
+        transfers_vec.push((old_address, transfer.old_satpoint, new_address, transfer.new_satpoint));
+      }
+
+      if !transfers_vec.is_empty() {
+        ret.push((inscription_id, transfers_vec));
+      }
+    }
+
+    Ok(if accept_json.0 {
+      Json(ret.iter().map(|ins| TransfersJson::new(ins.clone())).collect::<Vec<TransfersJson>>()).into_response()
+    } else {
+      TransfersHtml::new(Height(height), ret)
+        .page(server_config)
+        .into_response()
+    })
+  }
+
+  fn satpoint_to_address(
+    chain: Chain,
+    index: &Arc<Index>,
+    satpoint: SatPoint,
+    tx_cache: &mut HashMap<Txid, Transaction>) -> Result<String> {
+
+    let address = if satpoint.outpoint == unbound_outpoint() {
+      String::from("unbound")
+    } else {
+      if !tx_cache.contains_key(&satpoint.outpoint.txid) {
+        tx_cache.insert(satpoint.outpoint.txid,
+                        index
+                        .get_transaction(satpoint.outpoint.txid)?.unwrap());
+      }
+      
+      let output = tx_cache.get(&satpoint.outpoint.txid).unwrap().clone()
+        .output
+        .into_iter()
+        .nth(satpoint.outpoint.vout.try_into().unwrap()).unwrap();
+      if let Ok(address) = chain.address_from_script(&output.script_pubkey) {
+        address.to_string()
+      } else {
+        String::from("error")
+      }
+    };
+
+    Ok(address)
   }
 
   async fn transaction(

@@ -152,6 +152,51 @@ impl Entry for RuneId {
 }
 
 #[derive(Debug)]
+pub(crate) struct TransferEntry {
+  pub(crate) height: u32,
+  pub(crate) tx_count: u32,
+  pub(crate) new_satpoint: SatPoint,
+  pub(crate) old_satpoint: SatPoint,
+}
+
+pub(crate) type TransferEntryValue = (
+  u32,           // height
+  u32,           // tx_count
+  SatPointValue, // new_satpoint
+  SatPointValue, // old_satpoint
+);
+
+impl Entry for TransferEntry {
+  type Value = TransferEntryValue;
+
+  #[rustfmt::skip]
+  fn load(
+    (
+      height,
+      tx_count,
+      new_satpoint,
+      old_satpoint,
+    ): TransferEntryValue,
+  ) -> Self {
+    Self {
+      height,
+      tx_count,
+      new_satpoint: SatPoint::load(new_satpoint),
+      old_satpoint: SatPoint::load(old_satpoint),
+    }
+  }
+
+  fn store(self) -> Self::Value {
+    (
+      self.height,
+      self.tx_count,
+      self.new_satpoint.store(),
+      self.old_satpoint.store(),
+    )
+  }
+}
+
+#[derive(Debug)]
 pub(crate) struct InscriptionEntry {
   pub(crate) charms: u16,
   pub(crate) fee: u64,
@@ -295,19 +340,34 @@ impl Entry for OutPoint {
   }
 }
 
-pub(super) type SatPointValue = [u8; 44];
+pub(super) type SatPointValue = (u128, u128, u64, u32);
 
 impl Entry for SatPoint {
   type Value = SatPointValue;
 
   fn load(value: Self::Value) -> Self {
-    Decodable::consensus_decode(&mut io::Cursor::new(value)).unwrap()
+    let (a, b, c, d) = value;
+    let a_array = a.to_le_bytes();
+    let b_array = b.to_le_bytes();
+    let c_array = c.to_le_bytes();
+    let d_array = d.to_le_bytes();
+    let mut array = Vec::new();
+    array.extend(a_array);
+    array.extend(b_array);
+    array.extend(c_array);
+    array.extend(d_array);
+    let result: SatPoint = Decodable::consensus_decode(&mut io::Cursor::new(array)).unwrap();
+    result
   }
 
   fn store(self) -> Self::Value {
     let mut value = [0; 44];
     self.consensus_encode(&mut value.as_mut_slice()).unwrap();
-    value
+    (u128::from_le_bytes(value[ 0..16].try_into().unwrap()),
+     u128::from_le_bytes(value[16..32].try_into().unwrap()),
+      u64::from_le_bytes(value[32..40].try_into().unwrap()),
+      u32::from_le_bytes(value[40..44].try_into().unwrap()),
+    )
   }
 }
 
