@@ -51,9 +51,9 @@ pub(crate) struct Options {
   pub(crate) index_sats: bool,
   #[clap(long, help = "Index which inscriptions are transferred in each block.")]
   pub(crate) index_transfers: bool,
-  #[clap(long, help = "Index all the inscription movements in each block.")]
+  #[clap(long, help = "Index all the inscription movements in each block. Implies `--index-transfers`.")]
   pub(crate) index_transfer_history: bool,
-  #[clap(long, help = "Only track the first transfer of each inscription.")]
+  #[clap(long, help = "Only track the first transfer of each inscription. Implies `--index-transfer-history`.")]
   pub(crate) index_only_first_transfer: bool,
   #[arg(long, help = "Inhibit the display of the progress bar while updating the index.")]
   pub(crate) no_progress_bar: bool,

@@ -343,6 +343,17 @@ impl Index {
     let genesis_block_coinbase_transaction =
       options.chain().genesis_block().coinbase().unwrap().clone();
 
+    let mut index_transfers = options.index_transfers;
+    let mut index_transfer_history = options.index_transfer_history;
+
+    if options.index_only_first_transfer {
+      index_transfer_history = true;
+    }
+
+    if index_transfer_history {
+      index_transfers = true;
+    }
+
     Ok(Self {
       genesis_block_coinbase_txid: genesis_block_coinbase_transaction.txid(),
       client,
@@ -353,8 +364,8 @@ impl Index {
       height_limit: options.height_limit,
       index_runes,
       index_sats,
-      index_transfers: options.index_transfers || options.index_transfer_history,
-      index_transfer_history: options.index_transfer_history,
+      index_transfers,
+      index_transfer_history,
       no_progress_bar: options.no_progress_bar,
       options: options.clone(),
       path,
