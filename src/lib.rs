@@ -221,6 +221,7 @@ pub fn main() {
   env_logger::init();
 
   ctrlc::set_handler(move || {
+    SHUTTING_DOWN.fetch_or(true, atomic::Ordering::Relaxed);
     println!("Shutting down gracefully. Please wait. Pressing <CTRL-C> again won't do anything.");
 
     LISTENERS
