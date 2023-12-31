@@ -275,6 +275,7 @@ impl Server {
         .route("/feed.xml", get(Self::feed))
         .route("/input/:block/:transaction/:input", get(Self::input))
         .route("/inscription/:inscription_query", get(Self::inscription))
+        .route("/inscription_funder/:inscription_id", get(Self::inscription_funder))
         .route("/inscriptions", get(Self::inscriptions))
         .route("/inscriptions/:page", get(Self::inscriptions_paginated))
         .route(
@@ -1771,6 +1772,33 @@ impl Server {
       .page(server_config)
       .into_response()
     })
+  }
+
+  async fn inscription_funder(
+    Extension(index): Extension<Arc<Index>>,
+    Extension(server_config): Extension<Arc<ServerConfig>>,
+    Path(inscription_id): Path<InscriptionId>,
+  ) -> ServerResult<String> {
+    log::info!("GET /inscription_funder/{inscription_id}");
+
+    let reveal_txid = inscription_id.txid;
+    let reveal_tx = index.get_transaction(reveal_txid)?.unwrap();
+    let reveal_input_count = reveal_tx.input.len();
+    if reveal_input_count == 1 {
+      let commit_txid = reveal_tx.input[0].previous_output.txid;
+      let commit_tx = index.get_transaction(commit_txid)?.unwrap();
+      let commit_input_count = commit_tx.input.len();
+      if commit_input_count == 1 {
+        let funder_txid = reveal_tx.input[0].previous_output.txid;
+        let funder_tx = index.get_transaction(funder_txid)?.unwrap();
+        let funder_vout = reveal_tx.input[0].previous_output.vout;
+        Ok(server_config.chain.address_from_script(&funder_tx.output[funder_vout as usize].script_pubkey).unwrap().to_string())
+      } else {
+        Err(ServerError::BadRequest(format!("commit tx has {} inputs", commit_input_count)))
+      }
+    } else {
+      Err(ServerError::BadRequest(format!("reveal tx has {} inputs", reveal_input_count)))
+    }
   }
 
   async fn collections(
