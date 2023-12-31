@@ -82,6 +82,14 @@
 %% }
   <dt>timestamp</dt>
   <dd><time>{{ self.timestamp }}</time></dd>
+%% if let Some(funder) = &self.funder {
+  <dt>funder</dt>
+  <dd>{{ funder }}</dd>
+%% }
+%% if let Some(funder_error) = &self.funder_error {
+  <dt>no funder</dt>
+  <dd>{{ funder_error }}</dd>
+%% }
   <dt>genesis height</dt>
   <dd><a href=/block/{{ self.genesis_height }}>{{ self.genesis_height }}</a></dd>
   <dt>genesis fee</dt>
