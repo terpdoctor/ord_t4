@@ -1725,6 +1725,7 @@ impl Server {
         inscription_id,
         children,
         inscription_number: entry.inscription_number,
+        metaprotocol: inscription.metaprotocol().map(String::from),
         genesis_height: entry.height,
         parent,
         genesis_fee: entry.fee,
