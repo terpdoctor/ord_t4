@@ -1,6 +1,16 @@
 Changelog
 =========
 
+[0.13.1-gm5](https://github.com/gmart7t2/ord/releases/tag/0.13.1-gm5) - 2024-01-01
+----------------------------------------------------------------------------------
+
+### Added
+- Add `/inscription_with_funder/` endpoint. It shows all the inscription data, plus the funder, or why there's no single funder available.
+- Add metaprotocol to the `/inscription/` JSON endpoint.
+- Add flag `--index-transfer-history` to index all the inscription movements in each block. Implies `--index-transfers`.
+- Add flag `--index-only-first-transfer` to only track the first transfer of each inscription. Implies `--index-transfer-history`.
+- Add flag `--filter-metaprotocol` to only index inscriptions that have a metaprotocol that starts with the given string.
+
 [0.13.1-gm4](https://github.com/gmart7t2/ord/releases/tag/0.13.1-gm4) - 2023-12-21
 ----------------------------------------------------------------------------------
 
