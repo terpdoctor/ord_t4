@@ -1,6 +1,12 @@
 Changelog
 =========
 
+[0.13.1-gm6](https://github.com/gmart7t2/ord/releases/tag/0.13.1-gm6) - 2024-01-03
+----------------------------------------------------------------------------------
+
+### Fixed
+- Keep inscriptions with unrecognized even fields unbound after jubilee (#2894)
+
 [0.13.1-gm5](https://github.com/gmart7t2/ord/releases/tag/0.13.1-gm5) - 2024-01-01
 ----------------------------------------------------------------------------------
 
