@@ -1891,7 +1891,7 @@ impl Server {
                   .get_inscription_satpoint_by_id(inscription_id)?
                   .ok_or_not_found(|| format!("inscription {inscription_id}"))?;
 
-                let output = if satpoint.outpoint == unbound_outpoint() {
+                let output = if satpoint.outpoint.txid == unbound_outpoint().txid {
                   None
                 } else {
                   Some(
