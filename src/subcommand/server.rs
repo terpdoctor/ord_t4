@@ -1573,6 +1573,11 @@ impl Server {
     Path(DeserializeFromStr(query)): Path<DeserializeFromStr<InscriptionQuery>>,
     AcceptJson(accept_json): AcceptJson,
   ) -> ServerResult<Response> {
+    match query {
+      InscriptionQuery::Id(id) => log::info!("GET /inscription/{id}"),
+      InscriptionQuery::Number(inscription_number) => log::info!("GET /inscription/{inscription_number}"),
+    };
+
     let info =
       Index::inscription_info(&index, query)?.ok_or_not_found(|| format!("inscription {query}"))?;
 
