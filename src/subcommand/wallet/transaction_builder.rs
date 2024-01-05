@@ -432,7 +432,7 @@ impl TransactionBuilder {
 
   fn estimate_vbytes_with(inputs: usize, outputs: Vec<Address>) -> usize {
     Transaction {
-      version: 1,
+      version: 2,
       lock_time: LockTime::ZERO,
       input: (0..inputs)
         .map(|_| TxIn {
@@ -460,7 +460,7 @@ impl TransactionBuilder {
   fn build(self) -> Result<Transaction> {
     let recipient = self.recipient.script_pubkey();
     let transaction = Transaction {
-      version: 1,
+      version: 2,
       lock_time: LockTime::ZERO,
       input: self
         .inputs
@@ -797,7 +797,7 @@ mod tests {
     pretty_assert_eq!(
       tx_builder.build(),
       Ok(Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(1)), tx_in(outpoint(2)), tx_in(outpoint(3))],
         output: vec![
@@ -847,7 +847,7 @@ mod tests {
       )
       .build_transaction(),
       Ok(Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(1))],
         output: vec![tx_out(4901, recipient())],
@@ -899,7 +899,7 @@ mod tests {
       )
       .build_transaction(),
       Ok(Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(1)), tx_in(outpoint(2))],
         output: vec![tx_out(4_950, change(1)), tx_out(4_862, recipient())],
@@ -973,7 +973,7 @@ mod tests {
       )
       .build_transaction(),
       Ok(Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(1)), tx_in(outpoint(2))],
         output: vec![
@@ -1114,7 +1114,7 @@ mod tests {
       )
       .build_transaction(),
       Ok(Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(1))],
         output: vec![
@@ -1165,7 +1165,7 @@ mod tests {
       )
       .build_transaction(),
       Ok(Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(1))],
         output: vec![tx_out(3_333, change(1)), tx_out(6_537, recipient())],
@@ -1194,7 +1194,7 @@ mod tests {
       )
       .build_transaction(),
       Ok(Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(2)), tx_in(outpoint(1))],
         output: vec![tx_out(10_001, change(1)), tx_out(9_811, recipient())],
@@ -1466,7 +1466,7 @@ mod tests {
     pretty_assert_eq!(
       transaction,
       Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(1))],
         output: vec![tx_out(10_000 - fee.to_sat(), recipient())],
@@ -1492,7 +1492,7 @@ mod tests {
       )
       .build_transaction(),
       Ok(Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(1))],
         output: vec![tx_out(1000, recipient()), tx_out(3870, change(1))],
@@ -1521,7 +1521,7 @@ mod tests {
       )
       .build_transaction(),
       Ok(Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(1)), tx_in(outpoint(2))],
         output: vec![tx_out(1500, recipient()), tx_out(312, change(1))],
@@ -1641,7 +1641,7 @@ mod tests {
       )
       .build_transaction(),
       Ok(Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(1))],
         output: vec![tx_out(901, recipient())],
@@ -1667,7 +1667,7 @@ mod tests {
       )
       .build_transaction(),
       Ok(Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(1))],
         output: vec![tx_out(20_000, recipient())],
@@ -1693,7 +1693,7 @@ mod tests {
       )
       .build_transaction(),
       Ok(Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(1))],
         output: vec![tx_out(1005, recipient())],
@@ -1782,7 +1782,7 @@ mod tests {
       )
       .build_transaction(),
       Ok(Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(1))],
         output: vec![tx_out(1802, recipient())],
@@ -1808,7 +1808,7 @@ mod tests {
       )
       .build_transaction(),
       Ok(Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(1))],
         output: vec![tx_out(20250, recipient())],
@@ -2002,7 +2002,7 @@ mod tests {
     pretty_assert_eq!(
       transaction,
       Transaction {
-        version: 1,
+        version: 2,
         lock_time: LockTime::ZERO,
         input: vec![tx_in(outpoint(1))],
         output: vec![

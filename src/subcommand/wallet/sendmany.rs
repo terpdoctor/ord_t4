@@ -1,6 +1,5 @@
 use {
   super::*,
-  crate::wallet::Wallet,
   bitcoin::{
     locktime::absolute::LockTime,
     policy::MAX_STANDARD_TX_WEIGHT,
@@ -45,7 +44,7 @@ pub struct Output {
 impl SendMany {
   const SCHNORR_SIGNATURE_SIZE: usize = 64;
 
-  pub(crate) fn run(self, options: Options) -> SubcommandResult {
+  pub(crate) fn run(self, wallet: String, options: Options) -> SubcommandResult {
     let file = File::open(&self.csv)?;
     let reader = BufReader::new(file);
     let mut line_number = 1;
@@ -93,9 +92,9 @@ impl SendMany {
     let index = Index::open(&options)?;
     index.update()?;
 
-    let client = options.bitcoin_rpc_client_for_wallet_command(false)?;
-    let unspent_outputs = index.get_unspent_outputs(Wallet::load(&options)?)?;
-    let locked_outputs = index.get_locked_outputs(Wallet::load(&options)?)?;
+    let client = bitcoin_rpc_client_for_wallet_command(wallet, &options)?;
+    let unspent_outputs = get_unspent_outputs(&client, &index)?;
+    let locked_outputs = get_locked_outputs(&client)?;
 
     // we get a vector of (SatPoint, InscriptionId), and turn it into a map <InscriptionId> -> <SatPoint>
     let mut inscriptions = BTreeMap::new();

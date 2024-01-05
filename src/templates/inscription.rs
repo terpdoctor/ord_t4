@@ -4,8 +4,6 @@ use super::*;
 pub(crate) struct InscriptionHtml {
   pub(crate) chain: Chain,
   pub(crate) children: Vec<InscriptionId>,
-  pub(crate) funder: Option<String>,
-  pub(crate) funder_error: Option<String>,
   pub(crate) genesis_fee: u64,
   pub(crate) genesis_height: u32,
   pub(crate) inscription: Inscription,
@@ -28,15 +26,10 @@ pub struct InscriptionJson {
   pub children: Vec<InscriptionId>,
   pub content_length: Option<usize>,
   pub content_type: Option<String>,
-  #[serde(default, skip_serializing_if = "Option::is_none")]
-  pub funder: Option<String>,
-  #[serde(default, skip_serializing_if = "Option::is_none")]
-  pub funder_error: Option<String>,
   pub genesis_fee: u64,
   pub genesis_height: u32,
   pub inscription_id: InscriptionId,
   pub inscription_number: i32,
-  pub metaprotocol: Option<String>,
   pub next: Option<InscriptionId>,
   pub output_value: Option<u64>,
   pub parent: Option<InscriptionId>,

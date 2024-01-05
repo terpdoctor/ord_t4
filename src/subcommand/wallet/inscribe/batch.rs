@@ -138,7 +138,7 @@ impl Batch {
     }
 
     let signed_reveal_tx = if reveal_input_info.is_empty() {
-      bitcoin::consensus::encode::serialize(&reveal_tx)
+      consensus::encode::serialize(&reveal_tx)
     } else {
       client
         .sign_raw_transaction_with_wallet(
@@ -688,7 +688,7 @@ impl Batch {
         .collect(),
       output: outputs,
       lock_time: LockTime::ZERO,
-      version: 1,
+      version: 2,
     };
 
     let fee = {

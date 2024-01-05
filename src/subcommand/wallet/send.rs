@@ -1,6 +1,6 @@
-use {super::*, crate::subcommand::wallet::transaction_builder::Target, crate::wallet::Wallet};
+use {super::*, crate::subcommand::wallet::transaction_builder::Target};
 
-#[derive(Debug, Parser, Clone)]
+#[derive(Debug, Parser)]
 pub(crate) struct Send {
   address: Address<NetworkUnchecked>,
   outgoing: Outgoing,
@@ -33,27 +33,28 @@ pub struct Output {
 }
 
 impl Send {
-  pub(crate) fn run(self, options: Options) -> SubcommandResult {
+  pub(crate) fn run(self, wallet: String, options: Options) -> SubcommandResult {
     let address = self
       .address
       .clone()
       .require_network(options.chain().network())?;
 
     let index = Index::open(&options)?;
+
     index.update()?;
 
-    let chain = options.chain();
+    let client = bitcoin_rpc_client_for_wallet_command(wallet, &options)?;
 
-    let client = options.bitcoin_rpc_client_for_wallet_command(false)?;
+    let chain = options.chain();
 
     let mut unspent_outputs = if self.coin_control {
       BTreeMap::new()
     } else if options.ignore_outdated_index {
       return Err(anyhow!(
         "--ignore-outdated-index only works in conjunction with --coin-control when sending"
-      ));
+      ))
     } else {
-      index.get_unspent_outputs(Wallet::load(&options)?)?
+      get_unspent_outputs(&client, &index)?
     };
 
     for outpoint in &self.utxo {
@@ -65,11 +66,7 @@ impl Send {
       );
     }
 
-    let wallet = Wallet::load(&options)?;
-
-    let unspent_outputs = index.get_unspent_outputs(wallet)?;
-
-    let locked_outputs = index.get_locked_outputs(wallet)?;
+    let locked_outputs = get_locked_outputs(&client)?;
 
     let inscriptions = index.get_inscriptions(&unspent_outputs)?;
 
@@ -280,7 +277,7 @@ impl Send {
     };
 
     let unfunded_transaction = Transaction {
-      version: 1,
+      version: 2,
       lock_time: LockTime::ZERO,
       input: input
         .into_iter()

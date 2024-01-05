@@ -64,13 +64,19 @@
   <dt>metaprotocol</dt>
   <dd>{{ metaprotocol }}</dd>
 %% }
-%% if let Some(content_length) = self.inscription.content_length() {
+%% if self.inscription.content_length().is_some() || self.inscription.delegate().is_some() {
+%% if let Some(delegate) = self.inscription.delegate() {
+  <dt>delegate</dt>
+  <dd><a href=/inscription/{{ delegate }}>{{ delegate }}</a></dd>
+%% }
   <dt>preview</dt>
   <dd><a href=/preview/{{self.inscription_id}}>link</a></dd>
   <dt>content</dt>
   <dd><a href=/content/{{self.inscription_id}}>link</a></dd>
+%% if let Some(content_length) = self.inscription.content_length() {
   <dt>content length</dt>
   <dd>{{ content_length }} bytes</dd>
+%% }
 %% }
 %% if let Some(content_type) = self.inscription.content_type() {
   <dt>content type</dt>
@@ -82,14 +88,6 @@
 %% }
   <dt>timestamp</dt>
   <dd><time>{{ self.timestamp }}</time></dd>
-%% if let Some(funder) = &self.funder {
-  <dt>funder</dt>
-  <dd>{{ funder }}</dd>
-%% }
-%% if let Some(funder_error) = &self.funder_error {
-  <dt>no funder</dt>
-  <dd>{{ funder_error }}</dd>
-%% }
   <dt>genesis height</dt>
   <dd><a href=/block/{{ self.genesis_height }}>{{ self.genesis_height }}</a></dd>
   <dt>genesis fee</dt>

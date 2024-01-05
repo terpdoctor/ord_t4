@@ -1,7 +1,7 @@
 use {
   self::batch::{Batch, Batchfile, Mode},
   super::*,
-  crate::{subcommand::wallet::transaction_builder::Target, wallet::Wallet},
+  crate::subcommand::wallet::transaction_builder::Target,
   bitcoin::{
     blockdata::{opcodes, script},
     key::PrivateKey,
@@ -144,7 +144,7 @@ pub(crate) struct Inscribe {
 }
 
 impl Inscribe {
-  pub(crate) fn run(self, options: Options) -> SubcommandResult {
+  pub(crate) fn run(self, wallet: String, options: Options) -> SubcommandResult {
     if self.commitment.is_some() && self.key.is_none() {
       return Err(anyhow!("--commitment only works with --key"));
     }
@@ -176,7 +176,7 @@ impl Inscribe {
     let index = Index::open(&options)?;
     index.update()?;
 
-    let wallet = Wallet::load(&options)?;
+    let client = bitcoin_rpc_client_for_wallet_command(wallet, &options)?;
 
     let mut utxos = if self.coin_control {
       BTreeMap::new()
@@ -185,14 +185,12 @@ impl Inscribe {
         "--ignore-outdated-index only works in conjunction with --coin-control when inscribing"
       ));
     } else {
-      index.get_unspent_outputs(Wallet::load(&options)?)?
+      get_unspent_outputs(&client, &index)?
     };
 
-    let locked_utxos = index.get_locked_outputs(wallet)?;
+    let locked_utxos = get_locked_outputs(&client)?;
 
     let runic_utxos = index.get_runic_outputs(&utxos.keys().cloned().collect::<Vec<OutPoint>>())?;
-
-    let client = options.bitcoin_rpc_client_for_wallet_command(false)?;
 
     for outpoint in &self.utxo {
       utxos.insert(
