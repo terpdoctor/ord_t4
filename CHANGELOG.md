@@ -1,6 +1,12 @@
 Changelog
 =========
 
+[0.15.0-gm2](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm2) - 2024-01-14
+----------------------------------------------------------------------------------
+
+### Added
+- Add `wallet inscribe --parent-satpoint` to help with using an unconfirmed parent inscription.
+
 [0.15.0-gm1](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm1) - 2024-01-11
 ----------------------------------------------------------------------------------
 
