@@ -137,7 +137,7 @@ impl Batch {
       });
     }
 
-    let signed_reveal_tx = if reveal_input_info.is_empty() {
+    let signed_reveal_tx = if reveal_input_info.is_empty() && self.parent_info.is_none() {
       consensus::encode::serialize(&reveal_tx)
     } else {
       client
@@ -764,6 +764,7 @@ pub(crate) struct Batchfile {
   pub(crate) inscriptions: Vec<BatchEntry>,
   pub(crate) mode: Mode,
   pub(crate) parent: Option<InscriptionId>,
+  pub(crate) parent_satpoint: Option<SatPoint>,
   pub(crate) postage: Option<u64>,
   pub(crate) sat: Option<Sat>,
 }

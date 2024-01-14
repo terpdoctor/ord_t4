@@ -115,6 +115,8 @@ pub(crate) struct Inscribe {
   pub(crate) no_limit: bool,
   #[clap(long, help = "Make inscription a child of <PARENT>.")]
   pub(crate) parent: Option<InscriptionId>,
+  #[clap(long, help = "The satpoint of the parent inscription, in case it isn't confirmed yet.")]
+  pub(crate) parent_satpoint: Option<SatPoint>,
   #[arg(
     long,
     help = "Amount of postage to include in the inscription. Default `10000sat`."
@@ -219,7 +221,7 @@ impl Inscribe {
 
     match (self.file, self.batch) {
       (Some(file), None) => {
-        parent_info = Inscribe::get_parent_info(self.parent, &index, &utxos, &client, chain)?;
+        parent_info = Inscribe::get_parent_info(self.parent, &index, &utxos, &client, chain, self.parent_satpoint)?;
 
         postage = self.postage.unwrap_or(TARGET_POSTAGE);
 
@@ -258,7 +260,7 @@ impl Inscribe {
       (None, Some(batch)) => {
         let batchfile = Batchfile::load(&batch)?;
 
-        parent_info = Inscribe::get_parent_info(batchfile.parent, &index, &utxos, &client, chain)?;
+        parent_info = Inscribe::get_parent_info(batchfile.parent, &index, &utxos, &client, chain, batchfile.parent_satpoint)?;
 
         postage = batchfile
           .postage
@@ -354,9 +356,19 @@ impl Inscribe {
     utxos: &BTreeMap<OutPoint, Amount>,
     client: &Client,
     chain: Chain,
+    satpoint: Option<SatPoint>,
   ) -> Result<Option<ParentInfo>> {
     if let Some(parent_id) = parent {
+      let satpoint = if let Some(satpoint) = satpoint {
+        satpoint
+      } else {
       if let Some(satpoint) = index.get_inscription_satpoint_by_id(parent_id)? {
+        satpoint
+      } else {
+        return Err(anyhow!(format!("parent {parent_id} does not exist")));
+      }
+      };
+
         if !utxos.contains_key(&satpoint.outpoint) {
           return Err(anyhow!(format!("parent {parent_id} not in wallet")));
         }
@@ -373,9 +385,6 @@ impl Inscribe {
             .nth(satpoint.outpoint.vout.try_into().unwrap())
             .expect("current transaction output"),
         }))
-      } else {
-        Err(anyhow!(format!("parent {parent_id} does not exist")))
-      }
     } else {
       Ok(None)
     }
