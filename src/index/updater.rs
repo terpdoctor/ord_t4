@@ -118,7 +118,7 @@ impl<'index> Updater<'_> {
 
       if uncommitted == self.index.options.commit {
         // eprintln!("\ncommitting after {} blocks at {}", uncommitted, self.height);
-        self.commit(wtx, value_cache)?;
+        self.commit(wtx, value_cache, progress_bar.is_some())?;
         value_cache = HashMap::new();
         uncommitted = 0;
         wtx = self.index.begin_write()?;
@@ -151,7 +151,7 @@ impl<'index> Updater<'_> {
     }
 
     if uncommitted > 0 {
-      self.commit(wtx, value_cache)?;
+      self.commit(wtx, value_cache, progress_bar.is_some())?;
     }
 
     if let Some(progress_bar) = &mut progress_bar {
@@ -715,7 +715,7 @@ impl<'index> Updater<'_> {
     Ok(())
   }
 
-  fn commit(&mut self, wtx: WriteTransaction, value_cache: HashMap<OutPoint, u64>) -> Result {
+  fn commit(&mut self, wtx: WriteTransaction, value_cache: HashMap<OutPoint, u64>, use_progress_bar: bool) -> Result {
     log::info!(
       "Committing at block height {}, {} outputs traversed, {} in map, {} cached",
       self.height,
@@ -734,8 +734,22 @@ impl<'index> Updater<'_> {
 
       let mut outpoint_to_sat_ranges = wtx.open_table(OUTPOINT_TO_SAT_RANGES)?;
 
+      let progress_bar = if use_progress_bar {
+        let progress_bar = ProgressBar::new(self.range_cache.len() as u64);
+        progress_bar.set_position(0);
+        progress_bar.set_style(
+          ProgressStyle::with_template(format!("[committing ranges at block {}] {{wide_bar}} {{pos}}/{{len}}", self.height).as_str()).unwrap(),
+        );
+        Some(progress_bar)
+      } else {
+        None
+      };
+
       for (outpoint, sat_range) in self.range_cache.drain() {
         outpoint_to_sat_ranges.insert(&outpoint, sat_range.as_slice())?;
+        if let Some(progress_bar) = &progress_bar {
+          progress_bar.inc(1);
+        }
       }
 
       self.outputs_inserted_since_flush = 0;
@@ -744,8 +758,22 @@ impl<'index> Updater<'_> {
     {
       let mut outpoint_to_value = wtx.open_table(OUTPOINT_TO_VALUE)?;
 
+      let progress_bar = if use_progress_bar {
+        let progress_bar = ProgressBar::new(value_cache.len() as u64);
+        progress_bar.set_position(0);
+        progress_bar.set_style(
+          ProgressStyle::with_template(format!("[committing values at block {}] {{wide_bar}} {{pos}}/{{len}}", self.height).as_str()).unwrap(),
+        );
+        Some(progress_bar)
+      } else {
+        None
+      };
+
       for (outpoint, value) in value_cache {
         outpoint_to_value.insert(&outpoint.store(), &value)?;
+        if let Some(progress_bar) = &progress_bar {
+          progress_bar.inc(1);
+        }
       }
     }
 
@@ -754,7 +782,24 @@ impl<'index> Updater<'_> {
     Index::increment_statistic(&wtx, Statistic::SatRanges, self.sat_ranges_since_flush)?;
     self.sat_ranges_since_flush = 0;
     Index::increment_statistic(&wtx, Statistic::Commits, 1)?;
+
+    let progress_bar = if use_progress_bar {
+      let progress_bar = ProgressBar::new(1);
+      progress_bar.set_position(0);
+      progress_bar.set_style(
+        ProgressStyle::with_template(format!("[committing db at block {}] {{wide_bar}} {{pos}}/{{len}}", self.height).as_str()).unwrap(),
+      );
+      progress_bar.inc(0);
+      Some(progress_bar)
+    } else {
+      None
+    };
+
     wtx.commit()?;
+
+    if let Some(progress_bar) = &progress_bar {
+      progress_bar.inc(1);
+    }
 
     Reorg::update_savepoints(self.index, self.height)?;
 
