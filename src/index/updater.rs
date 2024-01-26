@@ -118,7 +118,13 @@ impl<'index> Updater<'_> {
 
       if uncommitted == self.index.options.commit {
         // eprintln!("\ncommitting after {} blocks at {}", uncommitted, self.height);
-        self.commit(wtx, value_cache, progress_bar.is_some())?;
+        if progress_bar.is_some() {
+          progress_bar.clone().unwrap().suspend(|| {
+            self.commit(wtx, value_cache, true)
+          })?;
+        } else {
+          self.commit(wtx, value_cache, false)?
+        }
         value_cache = HashMap::new();
         uncommitted = 0;
         wtx = self.index.begin_write()?;
