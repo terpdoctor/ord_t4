@@ -1,6 +1,12 @@
 Changelog
 =========
 
+[0.15.0-gm3](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm3) - 2024-01-26
+----------------------------------------------------------------------------------
+
+### Added
+- Show progress bar while committing so it doesn't look like the indexer has frozen.
+
 [0.15.0-gm2](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm2) - 2024-01-14
 ----------------------------------------------------------------------------------
 
