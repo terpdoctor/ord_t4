@@ -1,6 +1,12 @@
 Changelog
 =========
 
+[0.15.0-gm4](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm4) - 2024-01-26
+----------------------------------------------------------------------------------
+
+### Added
+- Suspend indexer progress bar while showing commit progress bars to avoid interference between them.
+
 [0.15.0-gm3](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm3) - 2024-01-26
 ----------------------------------------------------------------------------------
 
