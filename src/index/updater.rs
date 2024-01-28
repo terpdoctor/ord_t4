@@ -157,7 +157,13 @@ impl<'index> Updater<'_> {
     }
 
     if uncommitted > 0 {
-      self.commit(wtx, value_cache, progress_bar.is_some())?;
+      if progress_bar.is_some() {
+        progress_bar.clone().unwrap().suspend(|| {
+          self.commit(wtx, value_cache, true)
+        })?;
+      } else {
+        self.commit(wtx, value_cache, false)?
+      }
     }
 
     if let Some(progress_bar) = &mut progress_bar {
