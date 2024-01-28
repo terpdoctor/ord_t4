@@ -48,6 +48,7 @@ pub(super) struct InscriptionUpdater<'a, 'db, 'tx> {
   pub(super) home_inscriptions: &'a mut Table<'db, 'tx, u32, InscriptionIdValue>,
   pub(super) id_to_sequence_number: &'a mut Table<'db, 'tx, InscriptionIdValue, u32>,
   pub(super) ignore_cursed: bool,
+  pub(super) ignore_txt_and_json: bool,
   pub(super) index_transactions: bool,
   pub(super) inscription_number_to_sequence_number: &'a mut Table<'db, 'tx, i32, u32>,
   pub(super) lost_sats: u64,
@@ -85,7 +86,7 @@ impl<'a, 'db, 'tx> InscriptionUpdater<'a, 'db, 'tx> {
     let total_output_value = tx.output.iter().map(|txout| txout.value).sum::<u64>();
 
     self.tx_count += 1;
-    let envelopes = ParsedEnvelope::from_transaction(tx);
+    let envelopes = ParsedEnvelope::from_transaction(tx, self.ignore_txt_and_json);
     let inscriptions = !envelopes.is_empty();
     let mut envelopes = envelopes.into_iter().peekable();
 

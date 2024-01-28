@@ -456,6 +456,7 @@ impl<'index> Updater<'_> {
       home_inscriptions: &mut home_inscriptions,
       id_to_sequence_number: &mut inscription_id_to_sequence_number,
       ignore_cursed: index.options.ignore_cursed,
+      ignore_txt_and_json: index.options.ignore_txt_and_json,
       index_transactions: self.index.index_transactions,
       inscription_number_to_sequence_number: &mut inscription_number_to_sequence_number,
       lost_sats,

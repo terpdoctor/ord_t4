@@ -78,6 +78,8 @@ pub struct Options {
   pub(crate) ignore_cursed: bool,
   #[arg(long, default_value = "5000", help = "Commit changes to the index file on disk every <COMMIT> blocks.")]
   pub(crate) commit: usize,
+  #[arg(long, help = "Ignore text and json inscriptions.")]
+  pub(crate) ignore_txt_and_json: bool,
 }
 
 impl Options {
