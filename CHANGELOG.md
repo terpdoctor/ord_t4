@@ -1,6 +1,12 @@
 Changelog
 =========
 
+[0.15.0-gm6](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm6) - 2024-01-28
+----------------------------------------------------------------------------------
+
+### Added
+- Add flag `--ignore-txt-and-json` to ignore text and json inscriptions.
+
 [0.15.0-gm5](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm5) - 2024-01-28
 ----------------------------------------------------------------------------------
 
