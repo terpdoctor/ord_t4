@@ -1,6 +1,12 @@
 Changelog
 =========
 
+[0.15.0-gm5](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm5) - 2024-01-28
+----------------------------------------------------------------------------------
+
+### Added
+- Suspend indexer progress bar while committing at end of indexing too.
+
 [0.15.0-gm4](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm4) - 2024-01-26
 ----------------------------------------------------------------------------------
 
