@@ -95,8 +95,8 @@ impl ParsedEnvelope {
       .map(|envelope| envelope.into())
       .filter(|envelope: &ParsedEnvelope| !ignore_txt_and_json || match envelope.payload.content_type.clone() {
         Some(content_type) =>
-          !content_type.to_vec().starts_with("text/plain".as_bytes()) &&
-          !content_type.to_vec().starts_with("application/json".as_bytes()),
+          !content_type.starts_with("text/plain".as_bytes()) &&
+          !content_type.starts_with("application/json".as_bytes()),
         None => true,
       })
       .collect()
