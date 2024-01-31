@@ -1060,6 +1060,10 @@ impl Index {
     Ok(result)
   }
 
+  pub(crate) fn client(&self) -> &Client {
+    &self.client
+  }
+
   pub(crate) fn block_header(&self, hash: BlockHash) -> Result<Option<Header>> {
     self.client.get_block_header(&hash).into_option()
   }

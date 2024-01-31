@@ -1,12 +1,14 @@
 use {
-  self::batch::{Batch, Batchfile, Mode},
+  self::batch::{Batch, BatchEntry, Batchfile, Mode},
   super::*,
   crate::subcommand::wallet::transaction_builder::Target,
+  base64::{Engine as _, engine::general_purpose},
   bitcoin::{
     blockdata::{opcodes, script},
     key::PrivateKey,
     key::{TapTweak, TweakedKeyPair, TweakedPublicKey, UntweakedKeyPair},
     policy::MAX_STANDARD_TX_WEIGHT,
+    psbt::Psbt,
     secp256k1::{self, constants::SCHNORR_SIGNATURE_SIZE, rand, Secp256k1, XOnlyPublicKey},
     sighash::{Prevouts, SighashCache, TapSighashType},
     taproot::Signature,
@@ -16,6 +18,9 @@ use {
   bitcoincore_rpc::Client,
   bitcoincore_rpc::RawTx,
   std::collections::BTreeSet,
+  std::io::Write,
+  tempfile::tempdir,
+  url::Url,
 };
 
 mod batch;
@@ -26,13 +31,22 @@ pub struct InscriptionInfo {
   pub location: SatPoint,
 }
 
-#[derive(Serialize, Deserialize)]
+fn is_zero(n: &u64) -> bool {
+  *n == 0
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Output {
   #[serde(skip_serializing_if = "Option::is_none")]
   pub commit: Option<Txid>,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub commit_hex: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub commit_psbt: Option<String>,
+  #[serde(skip_serializing_if = "Vec::is_empty")]
   pub inscriptions: Vec<InscriptionInfo>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub message: Option<String>,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub parent: Option<InscriptionId>,
   #[serde(skip_serializing_if = "Option::is_none")]
@@ -41,6 +55,7 @@ pub struct Output {
   pub reveal: Option<Txid>,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub reveal_hex: Option<String>,
+  #[serde(skip_serializing_if = "is_zero")]
   pub total_fees: u64,
 }
 
@@ -144,6 +159,10 @@ pub(crate) struct Inscribe {
   pub(crate) commit_input: Vec<OutPoint>,
   #[arg(long, help = "Inscribe <SAT>.", conflicts_with = "satpoint")]
   pub(crate) sat: Option<Sat>,
+  #[arg(long, help = "Don't use a local wallet. Leave the commit transaction unsigned instead.")]
+  pub(crate) no_wallet: bool,
+  #[arg(long, help = "Specify the vsize of the commit tx, for when we don't have a local wallet to sign with.")]
+  pub(crate) commit_vsize: Option<u64>,
 }
 
 impl Inscribe {
@@ -179,7 +198,14 @@ impl Inscribe {
     let index = Index::open(&options)?;
     index.update()?;
 
-    let client = bitcoin_rpc_client_for_wallet_command(wallet, &options)?;
+    let (mut utxos, locked_utxos, runic_utxos, client) = if self.no_wallet {
+      let utxos = BTreeMap::new();
+      let locked_utxos = BTreeSet::new();
+      let runic_utxos = BTreeSet::new();
+      let client = check_version(options.bitcoin_rpc_client(None)?)?;
+      (utxos, locked_utxos, runic_utxos, client)
+    } else {
+      let client = bitcoin_rpc_client_for_wallet_command(wallet, &options)?;
 
     let mut utxos = if self.coin_control {
       BTreeMap::new()
@@ -204,6 +230,9 @@ impl Inscribe {
       );
     }
 
+    (utxos, locked_utxos, runic_utxos, client)
+    };
+
     let chain = options.chain();
 
     let change = match self.change {
@@ -213,6 +242,8 @@ impl Inscribe {
 
     let postage;
     let destinations;
+    let fee_utxos;
+    let inscribe_on_specific_utxos;
     let inscriptions;
     let mode;
     let parent_info;
@@ -221,7 +252,7 @@ impl Inscribe {
 
     match (self.file, self.batch) {
       (Some(file), None) => {
-        parent_info = Inscribe::get_parent_info(self.parent, &index, &utxos, &client, chain, self.parent_satpoint)?;
+        parent_info = Inscribe::get_parent_info(self.parent, &index, &utxos, &client, chain, self.parent_satpoint, self.no_wallet)?;
 
         postage = self.postage.unwrap_or(TARGET_POSTAGE);
 
@@ -233,6 +264,7 @@ impl Inscribe {
           self.metaprotocol.clone(),
           metadata.clone(),
           self.compress,
+          None,
         )?];
         next_inscription = if self.next_file.is_some() {
           Some(Inscription::from_file(
@@ -243,6 +275,7 @@ impl Inscribe {
             self.metaprotocol,
             metadata,
             self.compress,
+            None,
           )?)
         } else {
           None
@@ -256,24 +289,28 @@ impl Inscribe {
           Some(destination) => destination.require_network(chain.network())?,
           None => get_change_address(&client, chain)?,
         }];
+
+        inscribe_on_specific_utxos = false;
+        fee_utxos = Vec::new();
       }
       (None, Some(batch)) => {
         let batchfile = Batchfile::load(&batch)?;
 
-        parent_info = Inscribe::get_parent_info(batchfile.parent, &index, &utxos, &client, chain, batchfile.parent_satpoint)?;
+        parent_info = Inscribe::get_parent_info(batchfile.parent, &index, &utxos, &client, chain, batchfile.parent_satpoint, self.no_wallet)?;
 
         postage = batchfile
           .postage
           .map(Amount::from_sat)
           .unwrap_or(TARGET_POSTAGE);
 
-        (inscriptions, destinations) = batchfile.inscriptions(
+        (inscriptions, destinations, inscribe_on_specific_utxos, fee_utxos) = batchfile.inscriptions(
           &client,
           chain,
           parent_info.as_ref().map(|info| info.tx_out.value),
           metadata,
           postage,
           self.compress,
+          &mut utxos,
         )?;
         next_inscription = None;
 
@@ -302,9 +339,10 @@ impl Inscribe {
       self.satpoint
     };
 
-    Batch {
+    let result = Batch {
       commit_fee_rate: self.commit_fee_rate.unwrap_or(self.fee_rate),
       commit_only: self.commit_only,
+      commit_vsize: self.commit_vsize,
       commitment: self.commitment,
       commitment_output: if self.commitment.is_some() {
         Some(client.get_raw_transaction_info(&self.commitment.unwrap().txid, None)?.vout[self.commitment.unwrap().vout as usize].clone())
@@ -314,6 +352,8 @@ impl Inscribe {
       destinations,
       dump,
       dry_run: self.dry_run,
+      fee_utxos,
+      inscribe_on_specific_utxos,
       inscriptions,
       key: self.key,
       mode,
@@ -321,6 +361,7 @@ impl Inscribe {
       no_backup,
       no_broadcast: self.no_broadcast,
       no_limit: self.no_limit,
+      no_wallet: self.no_wallet,
       parent_info,
       postage,
       reinscribe: self.reinscribe,
@@ -328,7 +369,8 @@ impl Inscribe {
       reveal_input: self.reveal_input,
       satpoint,
     }
-    .inscribe(chain, &index, &client, &locked_utxos, runic_utxos, &utxos, self.commit_input, change)
+    .inscribe(chain, &index, &client, &locked_utxos, runic_utxos, &mut utxos, self.commit_input, change);
+    Ok(Box::new(result.unwrap()))
   }
 
   fn parse_metadata(cbor: Option<PathBuf>, json: Option<PathBuf>) -> Result<Option<Vec<u8>>> {
@@ -357,37 +399,293 @@ impl Inscribe {
     client: &Client,
     chain: Chain,
     satpoint: Option<SatPoint>,
+    no_wallet: bool,
   ) -> Result<Option<ParentInfo>> {
     if let Some(parent_id) = parent {
       let satpoint = if let Some(satpoint) = satpoint {
         satpoint
       } else {
-      if let Some(satpoint) = index.get_inscription_satpoint_by_id(parent_id)? {
-        satpoint
-      } else {
-        return Err(anyhow!(format!("parent {parent_id} does not exist")));
-      }
+        if let Some(satpoint) = index.get_inscription_satpoint_by_id(parent_id)? {
+          satpoint
+        } else {
+          return Err(anyhow!(format!("parent {parent_id} does not exist")));
+        }
       };
 
-        if !utxos.contains_key(&satpoint.outpoint) {
-          return Err(anyhow!(format!("parent {parent_id} not in wallet")));
-        }
+      let tx_out = index
+        .get_transaction(satpoint.outpoint.txid)?
+        .expect("parent transaction not found in index")
+        .output
+        .into_iter()
+        .nth(satpoint.outpoint.vout.try_into().unwrap())
+        .expect("current transaction output");
 
-        Ok(Some(ParentInfo {
-          destination: get_change_address(client, chain)?,
-          id: parent_id,
-          location: satpoint,
-          tx_out: index
-            .get_transaction(satpoint.outpoint.txid)?
-            .expect("parent transaction not found in index")
-            .output
-            .into_iter()
-            .nth(satpoint.outpoint.vout.try_into().unwrap())
-            .expect("current transaction output"),
-        }))
+      if !no_wallet && !utxos.contains_key(&satpoint.outpoint) {
+        return Err(anyhow!(format!("parent {parent_id} not in wallet")));
+      }
+
+      let destination = if no_wallet {
+        chain.address_from_script(&tx_out.script_pubkey)?
+      } else {
+        get_change_address(client, chain)?
+      };
+      
+      Ok(Some(ParentInfo {
+        destination,
+        id: parent_id,
+        location: satpoint,
+        tx_out,
+      }))
     } else {
       Ok(None)
     }
+  }
+
+  fn fetch_url_into_file(
+    client: &reqwest::blocking::Client,
+    url: &str
+  ) -> Result<String> {
+    let res = client.get(url).send()?;
+
+    if !res.status().is_success() {
+      bail!(res.status());
+    }
+
+    Ok(res.text().unwrap())
+  }
+
+  pub(crate) fn inscribe_for_server(
+    data: serde_json::Value,
+    chain: Chain,
+    index: Arc<Index>,
+  ) -> Result<Output> {
+    let no_wallet = true;
+
+    if !data.is_object() {
+      return Err(anyhow!("expected object, not {:?}", data));
+    }
+
+    let data = data.as_object().unwrap();
+
+    if !data.contains_key("inscriptions") {
+      return Err(anyhow!("expected object to contain `inscriptions`"));
+    }
+
+    if !data.contains_key("fees_utxos") {
+      return Err(anyhow!("expected object to contain `fees_utxos`"));
+    }
+
+    let inscriptions = data.get("inscriptions").unwrap();
+    let fees_utxos = data.get("fees_utxos").unwrap();
+
+    let commit_vsize = if data.contains_key("commit_vsize") {
+      let commit_vsize = data.get("commit_vsize").unwrap();
+      if !commit_vsize.is_u64() {
+        return Err(anyhow!("expected `commit_vsize` to be a u64, not {:?}", commit_vsize));
+      }
+      Some(commit_vsize.as_u64().unwrap())
+    } else {
+      None
+    };
+
+    let parent = if data.contains_key("parent") {
+      let parent = data.get("parent").unwrap();
+      if !parent.is_string() {
+        return Err(anyhow!("expected `parent` to be a string, not {:?}", parent));
+      }
+      let parent = parent.as_str().unwrap();
+      match InscriptionId::from_str(parent) {
+        Ok(parent) => Some(parent),
+        _ => return Err(anyhow!("expected `parent` to contain valid inscriptionid, not {:?}", parent)),
+      }
+    } else {
+      None
+    };
+
+    if !inscriptions.is_array() {
+      return Err(anyhow!("expected `inscriptions` to be an array, not {:?}", inscriptions));
+    }
+
+    if !fees_utxos.is_array() {
+      return Err(anyhow!("expected `fees_utxos` to be an array, not {:?}", fees_utxos));
+    }
+
+    let inscriptions = inscriptions.as_array().unwrap();
+    let fees_utxos = fees_utxos.as_array().unwrap();
+
+    let mut entries = Vec::new();
+    let tmpdir = tempdir().unwrap();
+    let request_client = reqwest::blocking::Client::builder().build().unwrap();
+
+    for (i, inscription) in inscriptions.iter().enumerate() {
+      if !inscription.is_object() {
+        return Err(anyhow!("expected `inscriptions` to only contain objects, not {:?}", inscription));
+      }
+
+      let inscription = inscription.as_object().unwrap();
+
+      if !inscription.contains_key("file") {
+        return Err(anyhow!("expected `inscription` to contain `file`"));
+      }
+      let file = inscription.get("file").unwrap();
+      if !file.is_string() {
+        return Err(anyhow!("expected `inscriptions[].file` to be a string, not {:?}", file));
+      }
+      let file = file.as_str().unwrap();
+      let url = Url::parse(file)?;
+      let path = PathBuf::from(url.path());
+      let ext = match path.extension() {
+        Some(ext) => ext,
+        None => return Err(anyhow!("expected URL {:?} path {:?} to have a file extension", file, path)),
+      };
+      let tmpfile = tmpdir.path().join(format!("{i}.{}", ext.to_str().unwrap()));
+      match Self::fetch_url_into_file(&request_client, file) {
+        Ok(body) => {
+          match File::create(tmpfile.clone())?.write(body.as_bytes()) {
+            Ok(_) => (),
+            Err(x) => return Err(anyhow!("write error: {}", x)),
+          }
+        }
+        Err(e) => return Err(anyhow!("error fetching {} : {}", file, e)),
+      };
+
+      if !inscription.contains_key("utxo") {
+        return Err(anyhow!("expected `inscription` to contain `utxo`"));
+      }
+      let utxo = inscription.get("utxo").unwrap();
+      if !utxo.is_string() {
+        return Err(anyhow!("expected `inscriptions[].utxo` to be a string, not {:?}", utxo));
+      }
+      let utxo = utxo.as_str().unwrap();
+      let utxo = match OutPoint::from_str(utxo) {
+        Ok(utxo) => utxo,
+        _ => return Err(anyhow!("expected `inscriptions[].utxo` to be a valid utxo, not {:?}", utxo)),
+      };
+
+      if !inscription.contains_key("destination") {
+        return Err(anyhow!("expected `inscription` to contain `destination`"));
+      }
+      let destination = inscription.get("destination").unwrap();
+      if !destination.is_string() {
+        return Err(anyhow!("expected `inscriptions[].destination` to be a string, not {:?}", destination));
+      }
+      let destination = destination.as_str().unwrap();
+      let destination: Address<NetworkUnchecked> = match destination.parse() {
+        Ok(destination) => destination,
+        Err(_) => return Err(anyhow!("expected `inscriptions[].destination` to be a valid address, not {:?}", destination)),
+      };
+
+      /* we don't need to check addresses for the correct network type here, because the batch file expects unchecked addresses
+         let destination: Address = match destination.clone().require_network(chain.network()) {
+           Ok(destination) => destination,
+           Err(_) => return Err(anyhow!("expected `inscriptions[].destination` to be valid for the current chain, not {:?}", destination)),
+         };
+       */
+
+      entries.push(BatchEntry {
+        destination: Some(destination),
+        file: tmpfile.into(),
+        metadata: None,
+        metaprotocol: None,
+        utxo: Some(utxo),
+      });
+    }
+
+    let mut fees = Vec::new();
+
+    for fees_utxo in fees_utxos {
+      if !fees_utxo.is_string() {
+        return Err(anyhow!("expected `fees_utxos` to only contain strings, not {:?}", fees_utxo));
+      }
+
+      let fees_utxo = fees_utxo.as_str().unwrap();
+      let fees_utxo = match OutPoint::from_str(fees_utxo) {
+        Ok(fees_utxo) => fees_utxo,
+        _ => return Err(anyhow!("expected `fees_utxos` to contain valid utxos, not {:?}", fees_utxo)),
+      };
+
+      fees.push(fees_utxo);
+    }
+
+    let batchfile = Batchfile {
+      fees: Some(fees),
+      inscriptions: entries,
+      mode: Mode::SeparateOutputs,
+      parent,
+      ..Default::default()
+    };
+
+    let mut utxos = BTreeMap::new();
+    let locked_utxos = BTreeSet::new();
+    let runic_utxos = BTreeSet::new();
+    let client = index.client();
+
+    let change = None;
+
+    let postage;
+    let destinations;
+    let fee_utxos;
+    let inscribe_on_specific_utxos;
+    let inscriptions;
+    let mode;
+    let parent_info;
+    let next_inscription;
+
+    let compress = false;
+
+        parent_info = Inscribe::get_parent_info(batchfile.parent, &index, &utxos, &client, chain, batchfile.parent_satpoint, no_wallet)?;
+
+        postage = batchfile
+          .postage
+          .map(Amount::from_sat)
+          .unwrap_or(TARGET_POSTAGE);
+
+        (inscriptions, destinations, inscribe_on_specific_utxos, fee_utxos) = batchfile.inscriptions(
+          &client,
+          chain,
+          parent_info.as_ref().map(|info| info.tx_out.value),
+          None,
+          Amount::from_sat(0),
+          compress,
+          &mut utxos,
+        )?;
+        next_inscription = None;
+
+        mode = batchfile.mode;
+
+        if batchfile.sat.is_some() && mode != Mode::SameSat {
+          return Err(anyhow!("`sat` can only be set in `same-sat` mode"));
+        }
+
+    let satpoint = None;
+
+    Batch {
+      commit_fee_rate: FeeRate::try_from(0.0).unwrap(),
+      commit_only: false,
+      commit_vsize,
+      commitment: None,
+      commitment_output: None,
+      destinations,
+      dump: true,
+      dry_run: false,
+      fee_utxos,
+      inscribe_on_specific_utxos,
+      inscriptions,
+      key: None,
+      mode,
+      next_inscription,
+      no_backup: true,
+      no_broadcast: true,
+      no_limit: false,
+      no_wallet,
+      parent_info,
+      postage,
+      reinscribe: false,
+      reveal_fee_rate: FeeRate::try_from(0.0).unwrap(),
+      reveal_input: Vec::new(),
+      satpoint,
+    }
+    .inscribe(chain, &index, &client, &locked_utxos, runic_utxos, &mut utxos, Vec::new(), change)
   }
 }
 

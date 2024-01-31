@@ -136,16 +136,17 @@ impl Send {
     };
 
     let unsigned_transaction = TransactionBuilder::new(
-      satpoint,
+      vec![satpoint],
       inscriptions,
       unspent_outputs,
       locked_outputs,
       runic_outputs,
       address.clone(),
-      change,
+      Some(change),
       self.fee_rate,
       postage,
       self.force_input,
+      false,
     )
     .build_transaction()?;
 

@@ -51,6 +51,7 @@ mp4 = "0.14.0"
 ord-bitcoincore-rpc = "0.17.1"
 redb = "1.4.0"
 regex = "1.6.0"
+reqwest = { version = "0.11.10", features = ["blocking"] }
 rss = "2.0.1"
 rust-embed = "8.0.0"
 rustls = "0.22.0"
@@ -65,6 +66,7 @@ tokio = { version = "1.17.0", features = ["rt-multi-thread"] }
 tokio-stream = "0.1.9"
 tokio-util = {version = "0.7.3", features = ["compat"] }
 tower-http = { version = "0.4.0", features = ["compression-br", "compression-gzip", "cors", "set-header"] }
+url = "2.5.0"
 
 [dev-dependencies]
 criterion = "0.5.1"

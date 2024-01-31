@@ -27,6 +27,7 @@ pub struct Inscription {
   pub parent: Option<Vec<u8>>,
   pub pointer: Option<Vec<u8>>,
   pub unrecognized_even_field: bool,
+  pub utxo: Option<OutPoint>,
 }
 
 impl Inscription {
@@ -47,6 +48,7 @@ impl Inscription {
     metaprotocol: Option<String>,
     metadata: Option<Vec<u8>>,
     compress: bool,
+    utxo: Option<OutPoint>,
   ) -> Result<Self, Error> {
     let path = path.as_ref();
 
@@ -105,6 +107,7 @@ impl Inscription {
       metaprotocol: metaprotocol.map(|metaprotocol| metaprotocol.into_bytes()),
       parent: parent.map(|id| id.value()),
       pointer: pointer.map(Self::pointer_value),
+      utxo,
       ..Default::default()
     })
   }

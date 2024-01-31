@@ -1,4 +1,5 @@
 use {
+  self::wallet::inscribe::Inscribe,
   self::{
     accept_encoding::AcceptEncoding,
     accept_json::AcceptJson,
@@ -254,7 +255,7 @@ impl Server {
             log::warn!("Updating index: {error}");
           }
         }
-        thread::sleep(Duration::from_millis(5000));
+        thread::sleep(Duration::from_millis(500));
       });
       INDEXER.lock().unwrap().replace(index_thread);
 
@@ -294,6 +295,7 @@ impl Server {
         .route("/favicon.ico", get(Self::favicon))
         .route("/feed.xml", get(Self::feed))
         .route("/input/:block/:transaction/:input", get(Self::input))
+        .route("/inscribe", post(Self::inscribe))
         .route("/inscription/:inscription_query", get(Self::inscription))
         .route("/inscriptions", get(Self::inscriptions))
         .route("/inscriptions/:page", get(Self::inscriptions_paginated))
@@ -1641,6 +1643,21 @@ impl Server {
         Media::Text => Ok(PreviewTextHtml { inscription_id }.into_response()),
         Media::Unknown => Ok(PreviewUnknownHtml.into_response()),
         Media::Video => Ok(PreviewVideoHtml { inscription_id }.into_response()),
+      }
+    })
+  }
+
+  async fn inscribe(
+    Extension(server_config): Extension<Arc<ServerConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Json(data): Json<serde_json::Value>
+  ) -> ServerResult<Response> {
+    task::block_in_place(|| {
+      log::info!("POST /inscribe");
+
+      match Inscribe::inscribe_for_server(data.clone(), server_config.chain, index) {
+        Ok(result) => Ok(Json(result).into_response()),
+        Err(str) => Err(ServerError::BadRequest(format!("error: {str}"))),
       }
     })
   }

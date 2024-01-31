@@ -79,6 +79,7 @@ impl From<RawEnvelope> for ParsedEnvelope {
         parent,
         pointer,
         unrecognized_even_field,
+        utxo: None,
       },
       input: envelope.input,
       offset: envelope.offset,
