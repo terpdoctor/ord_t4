@@ -1,6 +1,12 @@
 Changelog
 =========
 
+[0.15.0-gm8](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm8) - 2024-01-31
+----------------------------------------------------------------------------------
+
+### Added
+- Allow setting metadata via `/inscribe` endpoint.
+
 [0.15.0-gm7](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm7) - 2024-01-31
 ----------------------------------------------------------------------------------
 
