@@ -920,6 +920,7 @@ pub(crate) struct BatchEntry {
   pub(crate) destination: Option<Address<NetworkUnchecked>>,
   pub(crate) file: PathBuf,
   pub(crate) metadata: Option<serde_yaml::Value>,
+  pub(crate) metadata_json: Option<serde_json::Value>,
   pub(crate) metaprotocol: Option<String>,
   pub(crate) utxo: Option<OutPoint>,
 }
@@ -927,7 +928,14 @@ pub(crate) struct BatchEntry {
 impl BatchEntry {
   pub(crate) fn metadata(&self) -> Result<Option<Vec<u8>>> {
     Ok(match &self.metadata {
-      None => None,
+      None => match &self.metadata_json {
+        Some(metadata) => {
+          let mut cbor = Vec::new();
+          ciborium::into_writer(&metadata, &mut cbor)?;
+          Some(cbor)
+        }
+        None => None,
+      }
       Some(metadata) => {
         let mut cbor = Vec::new();
         ciborium::into_writer(&metadata, &mut cbor)?;

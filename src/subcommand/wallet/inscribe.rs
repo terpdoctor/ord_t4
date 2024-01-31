@@ -571,6 +571,12 @@ impl Inscribe {
         _ => return Err(anyhow!("expected `inscriptions[].utxo` to be a valid utxo, not {:?}", utxo)),
       };
 
+      let metadata = if inscription.contains_key("metadata") {
+        Some(inscription.get("metadata").unwrap().clone())
+      } else {
+        None
+      };
+
       if !inscription.contains_key("destination") {
         return Err(anyhow!("expected `inscription` to contain `destination`"));
       }
@@ -595,6 +601,7 @@ impl Inscribe {
         destination: Some(destination),
         file: tmpfile.into(),
         metadata: None,
+        metadata_json: metadata,
         metaprotocol: None,
         utxo: Some(utxo),
       });
