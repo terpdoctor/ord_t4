@@ -1,3 +1,5 @@
+use reqwest::header::USER_AGENT;
+use reqwest::header;
 use {
   self::batch::{Batch, BatchEntry, Batchfile, Mode},
   super::*,
@@ -522,7 +524,9 @@ impl Inscribe {
 
     let mut entries = Vec::new();
     let tmpdir = tempdir().unwrap();
-    let request_client = reqwest::blocking::Client::builder().build().unwrap();
+    let mut headers = header::HeaderMap::new();
+    headers.insert(USER_AGENT, header::HeaderValue::from_static("ord inscribe endpoint"));
+    let request_client = reqwest::blocking::Client::builder().default_headers(headers).build().unwrap();
 
     for (i, inscription) in inscriptions.iter().enumerate() {
       if !inscription.is_object() {
