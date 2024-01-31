@@ -18,7 +18,6 @@ use {
   bitcoincore_rpc::Client,
   bitcoincore_rpc::RawTx,
   std::collections::BTreeSet,
-  std::io::Write,
   tempfile::tempdir,
   url::Url,
 };
@@ -443,15 +442,23 @@ impl Inscribe {
 
   fn fetch_url_into_file(
     client: &reqwest::blocking::Client,
-    url: &str
-  ) -> Result<String> {
-    let res = client.get(url).send()?;
+    url: &str,
+    file: &PathBuf,
+  ) -> Result<u64> {
+    let mut res = client.get(url).send()?;
 
     if !res.status().is_success() {
       bail!(res.status());
     }
 
-    Ok(res.text().unwrap())
+    match File::create(file) {
+      Ok(mut fp) => 
+        match res.copy_to(&mut fp) {
+            Ok(n) => Ok(n),
+            Err(x) => return Err(anyhow!("write error: {}", x)),
+        }
+      Err(x) => return Err(anyhow!("create file error: {}", x)),
+    }
   }
 
   pub(crate) fn inscribe_for_server(
@@ -539,12 +546,10 @@ impl Inscribe {
         None => return Err(anyhow!("expected URL {:?} path {:?} to have a file extension", file, path)),
       };
       let tmpfile = tmpdir.path().join(format!("{i}.{}", ext.to_str().unwrap()));
-      match Self::fetch_url_into_file(&request_client, file) {
+      match Self::fetch_url_into_file(&request_client, file, &tmpfile) {
         Ok(body) => {
-          match File::create(tmpfile.clone())?.write(body.as_bytes()) {
-            Ok(_) => (),
-            Err(x) => return Err(anyhow!("write error: {}", x)),
-          }
+          eprintln!("body is {} bytes", body);
+          let _ = fs::copy(&tmpfile, "/tmp/file");
         }
         Err(e) => return Err(anyhow!("error fetching {} : {}", file, e)),
       };
