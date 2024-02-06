@@ -56,6 +56,8 @@ pub struct Output {
   pub reveal: Option<Txid>,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub reveal_hex: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub reveal_psbt: Option<String>,
   #[serde(skip_serializing_if = "is_zero")]
   pub total_fees: u64,
 }

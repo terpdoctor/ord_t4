@@ -127,7 +127,7 @@ impl Batch {
       return Ok(self.output(None, None, None,
                             Some(dummy_commit_psbt),
                             Some("sign commit_psbt then re-run the /inscribe endpoint with `commit_vsize` in the input JSON set to the vsize of the signed tx; the tx has 0 fees so you can't accidentally broadcast it".to_string()),
-                            None, None, 0, Vec::new(), &BTreeMap::new()));
+                            None, None, None, 0, Vec::new(), &BTreeMap::new()));
     }
 
     let commit_tx = commit_tx.unwrap();
@@ -147,6 +147,7 @@ impl Batch {
         } else {
           Some(reveal_tx.txid())
         },
+        None,
         None,
         None,
         None,
@@ -210,7 +211,14 @@ impl Batch {
         commit_tx.raw_hex()
       };
 
-      let reveal_tx = signed_reveal_tx.raw_hex();
+      let signed_reveal_tx_hex = signed_reveal_tx.raw_hex();
+
+      let mut blank_reveal_tx = reveal_tx.clone();
+      for input in &mut blank_reveal_tx.input {
+        input.witness = Witness::new();
+      }
+      let blank_reveal_tx = general_purpose::STANDARD.encode(Psbt::from_unsigned_tx(blank_reveal_tx)?.serialize());
+
       return Ok(self.output(None, None, None,
                             Some(commit_tx),
                             Some(if self.parent_info.is_none() {
@@ -218,7 +226,8 @@ impl Batch {
                             } else {
                               "sign commit_psbt and reveal_hex, then broadcast them both"
                             }.to_string()),
-                            Some(reveal_tx),
+                            Some(signed_reveal_tx_hex),
+                            Some(blank_reveal_tx),
                             None, 0, Vec::new(), &BTreeMap::new()));
     }
 
@@ -260,6 +269,7 @@ impl Batch {
       if self.dump && self.commitment.is_none() { Some(signed_commit_tx.raw_hex()) } else { None },
       None, None,
       if self.dump && !self.commit_only { Some(signed_reveal_tx.raw_hex()) } else { None },
+      None,
       if self.dump { Some(Self::get_recovery_key(&client, recovery_key_pair, chain.network())?.to_string()) } else { None },
       total_fees,
       self.inscriptions.clone(),
@@ -275,6 +285,7 @@ impl Batch {
     commit_psbt: Option<String>,
     message: Option<String>,
     reveal_hex: Option<String>,
+    reveal_psbt: Option<String>,
     recovery_descriptor: Option<String>,
     total_fees: u64,
     inscriptions: Vec<Inscription>,
@@ -291,6 +302,7 @@ impl Batch {
         recovery_descriptor: None,
         reveal: None,
         reveal_hex,
+        reveal_psbt,
         total_fees: 0,
       };
     }
@@ -346,6 +358,7 @@ impl Batch {
       message: None,
       reveal,
       reveal_hex,
+      reveal_psbt: None,
       recovery_descriptor,
       total_fees,
       parent: self.parent_info.clone().map(|info| info.id),
