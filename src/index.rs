@@ -405,6 +405,10 @@ impl Index {
     Ok(true)
   }
 
+  pub(crate) fn data_dir(&self) -> PathBuf {
+    self.options.data_dir()
+  }
+
   pub(crate) fn has_rune_index(&self) -> bool {
     self.index_runes
   }

@@ -19,7 +19,7 @@ use {
   bitcoincore_rpc::bitcoincore_rpc_json::{GetRawTransactionResultVout, ImportDescriptors, SignRawTransactionInput, Timestamp},
   bitcoincore_rpc::Client,
   bitcoincore_rpc::RawTx,
-  std::collections::BTreeSet,
+  std::{collections::BTreeSet, io::Write},
   tempfile::tempdir,
   url::Url,
 };
@@ -465,10 +465,33 @@ impl Inscribe {
     }
   }
 
+  pub(crate) fn get_temporary_key(
+    index: &Index,
+    chain: Chain,
+  ) -> Result<String> {
+    let key_path = index.data_dir().join("key.txt");
+    if let Err(err) = fs::create_dir_all(key_path.parent().unwrap()) {
+      eprintln!("error");
+      bail!("failed to create data dir `{}`: {err}", key_path.parent().unwrap().display());
+    }
+
+    match fs::read_to_string(key_path.clone()) {
+      Ok(key) => Ok(key.trim_end().to_string()),
+      Err(_) => {
+        let secp256k1 = Secp256k1::new();
+        let key_pair = UntweakedKeyPair::new(&secp256k1, &mut rand::thread_rng());
+        let key = PrivateKey::new(key_pair.secret_key(), chain.network()).to_wif();
+        let mut file = File::create(key_path)?;
+        file.write(format!("{}\n", key).as_bytes())?;
+        Ok(key)
+      }
+    }
+  }
+
   pub(crate) fn inscribe_for_server(
     data: serde_json::Value,
     chain: Chain,
-    index: Arc<Index>,
+    index: &Index,
   ) -> Result<Output> {
     let no_wallet = true;
 
@@ -677,6 +700,9 @@ impl Inscribe {
 
     let satpoint = None;
 
+    let key = Some(Self::get_temporary_key(index, chain)?);
+    key.clone().map(|key| eprintln!("using key {key}"));
+
     Batch {
       commit_fee_rate: FeeRate::try_from(0.0).unwrap(),
       commit_only: false,
@@ -689,7 +715,7 @@ impl Inscribe {
       fee_utxos,
       inscribe_on_specific_utxos,
       inscriptions,
-      key: None,
+      key,
       mode,
       next_inscription,
       no_backup: true,

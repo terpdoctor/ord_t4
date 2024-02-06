@@ -1655,7 +1655,7 @@ impl Server {
     task::block_in_place(|| {
       log::info!("POST /inscribe");
 
-      match Inscribe::inscribe_for_server(data.clone(), server_config.chain, index) {
+      match Inscribe::inscribe_for_server(data.clone(), server_config.chain, &index) {
         Ok(result) => Ok(Json(result).into_response()),
         Err(str) => Err(ServerError::BadRequest(format!("error: {str}"))),
       }
