@@ -24,6 +24,7 @@ pub(super) struct Batch {
   pub(super) reinscribe: bool,
   pub(super) reveal_fee_rate: FeeRate,
   pub(super) reveal_input: Vec<OutPoint>,
+  pub(super) reveal_psbt: Option<Psbt>,
   pub(super) satpoint: Option<SatPoint>,
 }
 
@@ -53,6 +54,7 @@ impl Default for Batch {
       reinscribe: false,
       reveal_fee_rate: 1.0.try_into().unwrap(),
       reveal_input: Vec::new(),
+      reveal_psbt: None,
       satpoint: None,
     }
   }
@@ -131,7 +133,7 @@ impl Batch {
     }
 
     let commit_tx = commit_tx.unwrap();
-    let reveal_tx = reveal_tx.unwrap();
+    let mut reveal_tx = reveal_tx.unwrap();
     let recovery_key_pair = recovery_key_pair.unwrap();
     let total_fees = total_fees.unwrap();
 
@@ -211,23 +213,83 @@ impl Batch {
         commit_tx.raw_hex()
       };
 
-      let signed_reveal_tx_hex = signed_reveal_tx.raw_hex();
+      let blank_reveal_psbt = if let Some(reveal_psbt) = self.reveal_psbt.clone() {
+        eprintln!("\nwe have been given a reveal psbt:\n{:#?}\ncopy its signature(s) to our reveal_tx", reveal_psbt);
+        let extracted_tx = reveal_psbt.extract_tx();
+        eprintln!("\nextracted tx {:?}", extracted_tx);
 
-      let mut blank_reveal_tx = reveal_tx.clone();
-      for input in &mut blank_reveal_tx.input {
-        input.witness = Witness::new();
-      }
-      let blank_reveal_tx = general_purpose::STANDARD.encode(Psbt::from_unsigned_tx(blank_reveal_tx)?.serialize());
+        for (i, input) in extracted_tx.input.iter().enumerate() {
+          eprintln!("\ninput {i}: {:?}", input);
+          eprintln!("  prevout outpoint: {:?}", input.previous_output);
+          eprintln!("  witness: {:?}", input.witness);
+        }
+
+        eprintln!("\n---");
+
+        eprintln!("\nour reveal tx {:?}", reveal_tx);
+
+        for (i, input) in reveal_tx.input.iter().enumerate() {
+          eprintln!("\ninput {i}: {:?}", input);
+          eprintln!("  prevout outpoint: {:?}", input.previous_output);
+          eprintln!("  witness: {:?}", input.witness);
+        }
+
+        eprintln!("\n---");
+
+        if extracted_tx.input.len() != reveal_tx.input.len() {
+          return Err(anyhow!("supplied reveal_psbt has {} inputs but should have {}", extracted_tx.input.len(), reveal_tx.input.len()));
+        }
+
+        for (i, input) in extracted_tx.input.iter().enumerate() {
+          if input.previous_output != reveal_tx.input[i].previous_output {
+            return Err(anyhow!("prevout of input {i} of reveal_psbt is incorrect"));
+          }
+
+          if reveal_tx.input[i].witness.len() == 0 {
+            if input.witness.len() > 0 {
+              reveal_tx.input[i] = input.clone();
+            } else {
+              return Err(anyhow!("input {i} of reveal_psbt isn't signed"));
+            }
+          }
+        }
+
+        eprintln!("\n---");
+        eprintln!("\nmerged txs:");
+
+        for (i, input) in reveal_tx.input.iter().enumerate() {
+          eprintln!("\ninput {i}: {:?}", input);
+          eprintln!("  prevout outpoint: {:?}", input.previous_output);
+          eprintln!("  witness: {:?}", input.witness);
+        }
+
+        None
+      } else {
+        let mut blank_reveal_tx = reveal_tx.clone();
+        let mut any_unsigned = false;
+        for input in &mut blank_reveal_tx.input {
+          if input.witness.len() == 0 {
+            any_unsigned = true;
+          }
+          input.witness = Witness::new();
+        }
+        
+        if any_unsigned {
+          Some(general_purpose::STANDARD.encode(Psbt::from_unsigned_tx(blank_reveal_tx)?.serialize()))
+        } else {
+          None
+        }
+      };
 
       return Ok(self.output(None, None, None,
                             Some(commit_tx),
                             Some(if self.parent_info.is_none() {
                               "sign commit_psbt, then broadcast the signed result and reveal_hex"
                             } else {
-                              "sign commit_psbt and reveal_hex, then broadcast them both"
+                              "sign commit_psbt and reveal_hex, then broadcast them both. or sign the reveal_psbt, add it to the input json, and run the /inscribe endpoint again"
                             }.to_string()),
-                            Some(signed_reveal_tx_hex),
-                            Some(blank_reveal_tx),
+                            Some(consensus::encode::serialize(&reveal_tx).raw_hex()),
+                            blank_reveal_psbt,
                             None, 0, Vec::new(), &BTreeMap::new()));
     }
 

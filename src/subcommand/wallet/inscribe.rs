@@ -1,5 +1,3 @@
-use reqwest::header::USER_AGENT;
-use reqwest::header;
 use {
   self::batch::{Batch, BatchEntry, Batchfile, Mode},
   super::*,
@@ -19,6 +17,7 @@ use {
   bitcoincore_rpc::bitcoincore_rpc_json::{GetRawTransactionResultVout, ImportDescriptors, SignRawTransactionInput, Timestamp},
   bitcoincore_rpc::Client,
   bitcoincore_rpc::RawTx,
+  reqwest::{header, header::USER_AGENT},
   std::{collections::BTreeSet, io::Write},
   tempfile::tempdir,
   url::Url,
@@ -370,6 +369,7 @@ impl Inscribe {
       reinscribe: self.reinscribe,
       reveal_fee_rate: self.fee_rate,
       reveal_input: self.reveal_input,
+      reveal_psbt: None,
       satpoint,
     }
     .inscribe(chain, &index, &client, &locked_utxos, runic_utxos, &mut utxos, self.commit_input, change);
@@ -703,6 +703,21 @@ impl Inscribe {
     let key = Some(Self::get_temporary_key(index, chain)?);
     key.clone().map(|key| eprintln!("using key {key}"));
 
+    let reveal_psbt = if data.contains_key("reveal_psbt") {
+      let reveal_psbt = data.get("reveal_psbt").unwrap();
+      if !reveal_psbt.is_string() {
+        return Err(anyhow!("expected `reveal_psbt` to be a string, not {:?}", reveal_psbt));
+      }
+      let reveal_psbt = reveal_psbt.as_str().unwrap();
+      eprintln!("got reveal_psbt: {reveal_psbt}");
+      match Psbt::from_str(reveal_psbt) {
+        Ok(psbt) => Some(psbt),
+        Err(e) => return Err(anyhow!("reveal_psbt {}", e)),
+      }
+    } else {
+      None
+    };
+
     Batch {
       commit_fee_rate: FeeRate::try_from(0.0).unwrap(),
       commit_only: false,
@@ -727,6 +742,7 @@ impl Inscribe {
       reinscribe: false,
       reveal_fee_rate: FeeRate::try_from(0.0).unwrap(),
       reveal_input: Vec::new(),
+      reveal_psbt,
       satpoint,
     }
     .inscribe(chain, &index, &client, &locked_utxos, runic_utxos, &mut utxos, Vec::new(), change)
