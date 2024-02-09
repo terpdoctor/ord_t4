@@ -207,17 +207,17 @@ impl Batch {
     };
 
     if self.no_wallet {
-      let commit_tx = if use_psbt_for_commit {
-        general_purpose::STANDARD.encode(Psbt::from_unsigned_tx(commit_tx)?.serialize())
+      let commit_tx_hex = if use_psbt_for_commit {
+        general_purpose::STANDARD.encode(Psbt::from_unsigned_tx(commit_tx.clone())?.serialize())
       } else {
         commit_tx.raw_hex()
       };
 
       let blank_reveal_psbt = if let Some(reveal_psbt) = self.reveal_psbt.clone() {
-        eprintln!("\nwe have been given a reveal psbt:\n{:#?}\ncopy its signature(s) to our reveal_tx", reveal_psbt);
+        // eprintln!("\nwe have been given a reveal psbt:\n{:#?}\ncopy its signature(s) to our reveal_tx", reveal_psbt);
         let extracted_tx = reveal_psbt.extract_tx();
-        eprintln!("\nextracted tx {:?}", extracted_tx);
-
+        // eprintln!("\nextracted tx {:?}", extracted_tx);
+/*
         for (i, input) in extracted_tx.input.iter().enumerate() {
           eprintln!("\ninput {i}: {:?}", input);
           eprintln!("  prevout outpoint: {:?}", input.previous_output);
@@ -235,7 +235,7 @@ impl Batch {
         }
 
         eprintln!("\n---");
-
+*/
         if extracted_tx.input.len() != reveal_tx.input.len() {
           return Err(anyhow!("supplied reveal_psbt has {} inputs but should have {}", extracted_tx.input.len(), reveal_tx.input.len()));
         }
@@ -253,7 +253,7 @@ impl Batch {
             }
           }
         }
-
+/*
         eprintln!("\n---");
         eprintln!("\nmerged txs:");
 
@@ -262,9 +262,10 @@ impl Batch {
           eprintln!("  prevout outpoint: {:?}", input.previous_output);
           eprintln!("  witness: {:?}", input.witness);
         }
-
+*/
         None
       } else {
+        // copy the reveal_tx, and blank out all the witnesses so we can convert it to a Psbt
         let mut blank_reveal_tx = reveal_tx.clone();
         let mut any_unsigned = false;
         for input in &mut blank_reveal_tx.input {
@@ -275,14 +276,29 @@ impl Batch {
         }
         
         if any_unsigned {
-          Some(general_purpose::STANDARD.encode(Psbt::from_unsigned_tx(blank_reveal_tx)?.serialize()))
+          let commit_txid = commit_tx.txid();
+          let mut blank_reveal_psbt = Psbt::from_unsigned_tx(blank_reveal_tx.clone())?;
+          let mut found_commit_output = false;
+          for (i, input) in blank_reveal_tx.input.iter().enumerate() {
+            if commit_txid == input.previous_output.txid {
+              if found_commit_output {
+                return Err(anyhow!("reveal has multiple inputs from the commit tx"));
+              }
+              found_commit_output = true;
+              blank_reveal_psbt.inputs[i].witness_utxo = Some(commit_tx.output[input.previous_output.vout as usize].clone())
+            }
+          }
+          if !found_commit_output {
+            return Err(anyhow!("reveal has no inputs from the commit tx"));
+          }
+          Some(general_purpose::STANDARD.encode(blank_reveal_psbt.serialize()))
         } else {
           None
         }
       };
 
       return Ok(self.output(None, None, None,
-                            Some(commit_tx),
+                            Some(commit_tx_hex),
                             Some(if self.parent_info.is_none() {
                               "sign commit_psbt, then broadcast the signed result and reveal_hex"
                             } else {
