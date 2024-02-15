@@ -354,6 +354,7 @@ impl Server {
         .route("/sat/:sat", get(Self::sat))
         .route("/search", get(Self::search_by_query))
         .route("/search/*query", get(Self::search_by_path))
+        .route("/sendtx", post(Self::send_transaction))
         .route("/static/*path", get(Self::static_asset))
         .route("/stats", get(Self::stats))
         .route("/status", get(Self::status))
@@ -775,6 +776,24 @@ impl Server {
       }
 
       Ok(Json(result).into_response())
+    })
+  }
+
+  async fn send_transaction(
+    Extension(index): Extension<Arc<Index>>,
+    Json(data): Json<serde_json::Value>
+  ) -> ServerResult<Response> {
+    task::block_in_place(|| {
+      log::info!("POST /sendtx");
+
+      if !data.is_string() {
+        return Err(ServerError::BadRequest("expected string".to_string()));
+      }
+
+      match index.client().send_raw_transaction(data.as_str().unwrap()) {
+        Ok(ok) => Ok(Json(ok).into_response()),
+        Err(e) => Err(ServerError::BadRequest(e.to_string()))
+      }
     })
   }
 
