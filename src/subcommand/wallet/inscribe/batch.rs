@@ -22,6 +22,7 @@ pub(super) struct Batch {
   pub(super) parent_info: Option<ParentInfo>,
   pub(super) postage: Amount,
   pub(super) reinscribe: bool,
+  pub(super) reveal_fee: Option<Amount>,
   pub(super) reveal_fee_rate: FeeRate,
   pub(super) reveal_input: Vec<OutPoint>,
   pub(super) reveal_psbt: Option<Psbt>,
@@ -52,6 +53,7 @@ impl Default for Batch {
       parent_info: None,
       postage: Amount::from_sat(10_000),
       reinscribe: false,
+      reveal_fee: None,
       reveal_fee_rate: 1.0.try_into().unwrap(),
       reveal_input: Vec::new(),
       reveal_psbt: None,
@@ -471,6 +473,10 @@ impl Batch {
       return Err(anyhow!("--next-file doesn't work without --commitment"));
     }
 
+    if !self.fee_utxos.is_empty() && self.reveal_fee.is_some() {
+      return Err(anyhow!("--reveal-fee doesn't work when specifying fee_utxos"));
+    }
+
     match self.mode {
       Mode::SameSat => assert_eq!(
         self.destinations.len(),
@@ -712,6 +718,12 @@ impl Batch {
       // eprintln!("total_vsize {} = commit_vsize {} + reveal_vsize {}", total_vsize, commit_vsize, reveal_vsize);
       reveal_fee = (fee_utxos_value * reveal_vsize + Amount::from_sat(total_vsize - 1)) / total_vsize;
       // eprintln!("reveal_fee = (fee_utxos {} * reveal_vsize {} + total_vsize {} - 1) / total_vsize {} = reveal_fee {}", fee_utxos_value.to_sat(), reveal_vsize, total_vsize, total_vsize, reveal_fee.to_sat());
+    } else if let Some(r) = self.reveal_fee {
+      if r < reveal_fee {
+        return Err(anyhow!("requested reveal_fee is too small; should be at least {} sats", reveal_fee.to_sat()));
+      }
+
+      reveal_fee = r;
     }
 
     let unsigned_commit_tx = if self.commitment.is_some() {
