@@ -151,6 +151,8 @@ pub(crate) struct Inscribe {
   pub(crate) commit_only: bool,
   #[clap(long, help = "Don't make a commit transaction; just create a reveal tx that reveals the inscription committed to by output <COMMITMENT>. Requires the same --key as was used to make the commitment. Implies --no-backup. This doesn't work if the --key has ever been backed up to the wallet.")]
   pub(crate) commitment: Option<OutPoint>,
+  #[arg(long, help = "Make the change of the reveal tx commit to the contents of multiple inscriptions defined in a yaml <NEXT-BATCH>.")]
+  pub(crate) next_batch: Option<PathBuf>,
   #[clap(long, help = "Make the change of the reveal tx commit to the contents of <NEXT-FILE>.")]
   pub(crate) next_file: Option<PathBuf>,
   #[clap(long, help = "Use <REVEAL-INPUT> as an extra input to the reveal tx. For use with `--commitment`.")]
@@ -179,8 +181,16 @@ impl Inscribe {
       return Err(anyhow!("--commit-only and --commitment don't work together"));
     }
 
+    if self.next_batch.is_some() && self.next_file.is_some() {
+      return Err(anyhow!("--next-batch and --next-file don't work together"));
+    }
+
+    if self.commit_only && self.next_batch.is_some() {
+      return Err(anyhow!("--commit-only and --next-batch don't work together"));
+    }
+
     if self.commit_only && self.next_file.is_some() {
-      return Err(anyhow!("--commit-only and --next_file don't work together"));
+      return Err(anyhow!("--commit-only and --next-file don't work together"));
     }
 
     if self.commitment.is_none() && !self.reveal_input.is_empty() {
@@ -251,8 +261,39 @@ impl Inscribe {
     let inscriptions;
     let mode;
     let parent_info;
-    let next_inscription;
     let sat;
+
+    let next_inscriptions = if self.next_file.is_some() {
+      vec![Inscription::from_file(
+        chain,
+        self.next_file.unwrap(),
+        self.parent,
+        None,
+        self.metaprotocol.clone(),
+        metadata.clone(),
+        self.compress,
+        None,
+      )?]
+    } else if self.next_batch.is_some() {
+      let batchfile = Batchfile::load(&self.next_batch.unwrap())?;
+      let parent_info = Inscribe::get_parent_info(batchfile.parent, &index, &utxos, &client, chain, batchfile.parent_satpoint, self.no_wallet)?;
+      let postage = batchfile
+          .postage
+          .map(Amount::from_sat)
+          .unwrap_or(TARGET_POSTAGE);
+
+      batchfile.inscriptions(
+        &client,
+        chain,
+        parent_info.as_ref().map(|info| info.tx_out.value),
+        metadata.clone(),
+        postage,
+        self.compress,
+        &mut utxos,
+      )?.0
+    } else {
+      Vec::new()
+    };
 
     match (self.file, self.batch) {
       (Some(file), None) => {
@@ -270,20 +311,6 @@ impl Inscribe {
           self.compress,
           None,
         )?];
-        next_inscription = if self.next_file.is_some() {
-          Some(Inscription::from_file(
-            chain,
-            self.next_file.unwrap(),
-            self.parent,
-            None,
-            self.metaprotocol,
-            metadata,
-            self.compress,
-            None,
-          )?)
-        } else {
-          None
-        };
 
         mode = Mode::SeparateOutputs;
 
@@ -316,7 +343,6 @@ impl Inscribe {
           self.compress,
           &mut utxos,
         )?;
-        next_inscription = None;
 
         mode = batchfile.mode;
 
@@ -361,7 +387,7 @@ impl Inscribe {
       inscriptions,
       key: self.key,
       mode,
-      next_inscription,
+      next_inscriptions,
       no_backup,
       no_broadcast: self.no_broadcast,
       no_limit: self.no_limit,
@@ -673,7 +699,7 @@ impl Inscribe {
     let inscriptions;
     let mode;
     let parent_info;
-    let next_inscription;
+    let next_inscriptions;
 
     let compress = false;
 
@@ -693,7 +719,7 @@ impl Inscribe {
           compress,
           &mut utxos,
         )?;
-        next_inscription = None;
+        next_inscriptions = Vec::new();
 
         mode = batchfile.mode;
 
@@ -735,7 +761,7 @@ impl Inscribe {
       inscriptions,
       key,
       mode,
-      next_inscription,
+      next_inscriptions,
       no_backup: true,
       no_broadcast: true,
       no_limit: false,

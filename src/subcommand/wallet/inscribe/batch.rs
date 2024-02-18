@@ -14,7 +14,7 @@ pub(super) struct Batch {
   pub(super) inscriptions: Vec<Inscription>,
   pub(super) key: Option<String>,
   pub(super) mode: Mode,
-  pub(super) next_inscription: Option<Inscription>,
+  pub(super) next_inscriptions: Vec<Inscription>,
   pub(super) no_backup: bool,
   pub(super) no_broadcast: bool,
   pub(super) no_limit: bool,
@@ -45,7 +45,7 @@ impl Default for Batch {
       inscriptions: Vec::new(),
       key: None,
       mode: Mode::SharedOutput,
-      next_inscription: None,
+      next_inscriptions: Vec::new(),
       no_backup: false,
       no_broadcast: false,
       no_limit: false,
@@ -469,8 +469,8 @@ impl Batch {
       return Err(anyhow!("listing utxos to use as fees only works when inscribing on specified utxos"));
     }
 
-    if self.next_inscription.is_some() && self.commitment.is_none() {
-      return Err(anyhow!("--next-file doesn't work without --commitment"));
+    if !self.next_inscriptions.is_empty() && self.commitment.is_none() {
+      return Err(anyhow!("--next-batch and --next-file don't work without --commitment"));
     }
 
     if !self.fee_utxos.is_empty() && self.reveal_fee.is_some() {
@@ -585,10 +585,9 @@ impl Batch {
 
     let commit_tx_address = Address::p2tr_tweaked(taproot_spend_info.output_key(), chain.network());
 
-    let reveal_change_address = if self.next_inscription.is_some() {
-      let next_inscriptions = vec![self.next_inscription.clone().unwrap()];
+    let reveal_change_address = if !self.next_inscriptions.is_empty() {
       let next_reveal_script = Inscription::append_batch_reveal_script(
-        &next_inscriptions,
+        &self.next_inscriptions,
         ScriptBuf::builder()
           .push_slice(public_key.serialize())
           .push_opcode(opcodes::all::OP_CHECKSIG),
