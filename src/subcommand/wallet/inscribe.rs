@@ -132,6 +132,8 @@ pub(crate) struct Inscribe {
   pub(crate) no_limit: bool,
   #[clap(long, help = "Make inscription a child of <PARENT>.")]
   pub(crate) parent: Option<InscriptionId>,
+  #[clap(long, help = "Address to return parent inscription to.")]
+  pub(crate) parent_destination: Option<Address<NetworkUnchecked>>,
   #[clap(long, help = "The satpoint of the parent inscription, in case it isn't confirmed yet.")]
   pub(crate) parent_satpoint: Option<SatPoint>,
   #[arg(
@@ -276,7 +278,7 @@ impl Inscribe {
       )?]
     } else if self.next_batch.is_some() {
       let batchfile = Batchfile::load(&self.next_batch.unwrap())?;
-      let parent_info = Inscribe::get_parent_info(batchfile.parent, &index, &utxos, &client, chain, batchfile.parent_satpoint, self.no_wallet)?;
+      let parent_info = Inscribe::get_parent_info(batchfile.parent, &index, &utxos, &client, chain, batchfile.parent_satpoint, self.no_wallet, self.parent_destination.clone())?;
       let postage = batchfile
           .postage
           .map(Amount::from_sat)
@@ -297,7 +299,7 @@ impl Inscribe {
 
     match (self.file, self.batch) {
       (Some(file), None) => {
-        parent_info = Inscribe::get_parent_info(self.parent, &index, &utxos, &client, chain, self.parent_satpoint, self.no_wallet)?;
+        parent_info = Inscribe::get_parent_info(self.parent, &index, &utxos, &client, chain, self.parent_satpoint, self.no_wallet, self.parent_destination)?;
 
         postage = self.postage.unwrap_or(TARGET_POSTAGE);
 
@@ -327,7 +329,7 @@ impl Inscribe {
       (None, Some(batch)) => {
         let batchfile = Batchfile::load(&batch)?;
 
-        parent_info = Inscribe::get_parent_info(batchfile.parent, &index, &utxos, &client, chain, batchfile.parent_satpoint, self.no_wallet)?;
+        parent_info = Inscribe::get_parent_info(batchfile.parent, &index, &utxos, &client, chain, batchfile.parent_satpoint, self.no_wallet, self.parent_destination)?;
 
         postage = batchfile
           .postage
@@ -432,6 +434,7 @@ impl Inscribe {
     chain: Chain,
     satpoint: Option<SatPoint>,
     no_wallet: bool,
+    destination: Option<Address<NetworkUnchecked>>,
   ) -> Result<Option<ParentInfo>> {
     if let Some(parent_id) = parent {
       let satpoint = if let Some(satpoint) = satpoint {
@@ -458,6 +461,8 @@ impl Inscribe {
 
       let destination = if no_wallet {
         chain.address_from_script(&tx_out.script_pubkey)?
+      } else if let Some(destination) = destination {
+        destination.require_network(chain.network())?
       } else {
         get_change_address(client, chain)?
       };
@@ -703,7 +708,7 @@ impl Inscribe {
 
     let compress = false;
 
-        parent_info = Inscribe::get_parent_info(batchfile.parent, &index, &utxos, &client, chain, batchfile.parent_satpoint, no_wallet)?;
+        parent_info = Inscribe::get_parent_info(batchfile.parent, &index, &utxos, &client, chain, batchfile.parent_satpoint, no_wallet, None)?;
 
         postage = batchfile
           .postage
