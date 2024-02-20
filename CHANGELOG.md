@@ -1,6 +1,21 @@
 Changelog
 =========
 
+[0.15.0-gm9](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm9) - 2024-02-20
+----------------------------------------------------------------------------------
+
+### Added
+- Include a PSBT version of the reveal tx in the /inscribe output, with no witness data.
+- Have the `/inscribe` endpoint generate and reuse the same temporary key per network.
+- Try merging the user-provided `reveal_psbt` with our `reveal_tx` to make a fully signed reveal tx.
+- Fill in `witness_utxo` for the input coming from the commit tx in the `reveal_psbt`.
+- Allow `--index-runes` to add a runes index to an existing index if runes aren't active yet.
+- Add `/sendtx` endpoint to broadcast a raw transaction. POST the raw tx as a JSON string.
+- Add `--reveal-fee` flag to `wallet inscribe`.
+- Add `--next-batch` flag, analogous to `--next-file`, but for batches of inscriptions.
+- Add `--parent-destination` flag to control where the parent inscription ends up when using it to inscribe a child.
+- Set `--reveal-fee` to `0 sats` when using `--commitment` to avoid creating a change output in the reveal tx.
+
 [0.15.0-gm8](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm8) - 2024-01-31
 ----------------------------------------------------------------------------------
 
