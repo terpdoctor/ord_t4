@@ -151,7 +151,7 @@ pub(crate) struct Inscribe {
   pub(crate) key: Option<String>,
   #[clap(long, help = "Don't make a reveal tx; just create a commit tx that sends all the sats to a new commitment. Either specify --key if you have one, or note the --key it generates for you. Implies --no-backup.")]
   pub(crate) commit_only: bool,
-  #[clap(long, help = "Don't make a commit transaction; just create a reveal tx that reveals the inscription committed to by output <COMMITMENT>. Requires the same --key as was used to make the commitment. Implies --no-backup. This doesn't work if the --key has ever been backed up to the wallet.")]
+  #[clap(long, help = "Don't make a commit transaction; just create a reveal tx that reveals the inscription committed to by output <COMMITMENT>. Requires the same --key as was used to make the commitment. Implies --no-backup. This doesn't work if the --key has ever been backed up to the wallet. When using --commitment, the reveal tx will create a change output unless --reveal-fee is set to '0 sats', in which case the whole commitment will go to postage and fees.")]
   pub(crate) commitment: Option<OutPoint>,
   #[arg(long, help = "Make the change of the reveal tx commit to the contents of multiple inscriptions defined in a yaml <NEXT-BATCH>.")]
   pub(crate) next_batch: Option<PathBuf>,

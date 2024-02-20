@@ -658,11 +658,13 @@ impl Batch {
 
     let commit_input = if self.parent_info.is_some() { 1 } else { 0 };
 
-    if self.commitment.is_some() {
-      reveal_outputs.push(TxOut {
-        script_pubkey: reveal_change_address.unwrap().script_pubkey(),
-        value: 0,
-      });
+    if self.reveal_fee != Some(Amount::from_sat(0)) {
+      if self.commitment.is_some() {
+        reveal_outputs.push(TxOut {
+          script_pubkey: reveal_change_address.unwrap().script_pubkey(),
+          value: 0,
+        });
+      }
     }
 
     let (_, mut reveal_fee, reveal_vsize) = Self::build_reveal_transaction(
@@ -718,11 +720,13 @@ impl Batch {
       reveal_fee = (fee_utxos_value * reveal_vsize + Amount::from_sat(total_vsize - 1)) / total_vsize;
       // eprintln!("reveal_fee = (fee_utxos {} * reveal_vsize {} + total_vsize {} - 1) / total_vsize {} = reveal_fee {}", fee_utxos_value.to_sat(), reveal_vsize, total_vsize, total_vsize, reveal_fee.to_sat());
     } else if let Some(r) = self.reveal_fee {
-      if r < reveal_fee {
-        return Err(anyhow!("requested reveal_fee is too small; should be at least {} sats", reveal_fee.to_sat()));
-      }
+      if r != Amount::from_sat(0) {
+        if r < reveal_fee {
+          return Err(anyhow!("requested reveal_fee is too small; should be at least {} sats", reveal_fee.to_sat()));
+        }
 
-      reveal_fee = r;
+        reveal_fee = r;
+      }
     }
 
     let unsigned_commit_tx = if self.commitment.is_some() {
@@ -767,8 +771,10 @@ impl Batch {
     let vout = if self.commitment.is_some() {
       reveal_inputs[commit_input] = self.commitment.unwrap();
 
-      if let Some(last) = reveal_outputs.last_mut() {
-        (*last).value = (reveal_input_value + self.commitment_output.clone().unwrap().value - total_postage - reveal_fee).to_sat();
+      if self.reveal_fee != Some(Amount::from_sat(0)) {
+        if let Some(last) = reveal_outputs.last_mut() {
+          (*last).value = (reveal_input_value + self.commitment_output.clone().unwrap().value - total_postage - reveal_fee).to_sat();
+        }
       }
 
       0
