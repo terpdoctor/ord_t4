@@ -36,6 +36,23 @@ impl Tag {
     }
   }
 
+  pub(crate) fn push_bytes(self, tmp: script::Builder) -> script::Builder {
+    // if it's a single byte between 1 and 16, use a PUSHNUM opcode
+    let bytes = self.bytes();
+    if bytes.len() == 1 && (1..17).contains(&bytes[0]) {
+      tmp.push_opcode(
+        match bytes[0] {
+           1 => opcodes::all::OP_PUSHNUM_1,   2 => opcodes::all::OP_PUSHNUM_2,   3 => opcodes::all::OP_PUSHNUM_3,   4 => opcodes::all::OP_PUSHNUM_4,
+           5 => opcodes::all::OP_PUSHNUM_5,   6 => opcodes::all::OP_PUSHNUM_6,   7 => opcodes::all::OP_PUSHNUM_7,   8 => opcodes::all::OP_PUSHNUM_8,
+           9 => opcodes::all::OP_PUSHNUM_9,  10 => opcodes::all::OP_PUSHNUM_10, 11 => opcodes::all::OP_PUSHNUM_11, 12 => opcodes::all::OP_PUSHNUM_12,
+          13 => opcodes::all::OP_PUSHNUM_13, 14 => opcodes::all::OP_PUSHNUM_14, 15 => opcodes::all::OP_PUSHNUM_15, 16 => opcodes::all::OP_PUSHNUM_16,
+           _ => panic!("unreachable"),
+        })
+    } else {
+      tmp.push_slice::<&script::PushBytes>(bytes.try_into().unwrap())
+    }
+  }
+
   pub(crate) fn encode(self, builder: &mut script::Builder, value: &Option<Vec<u8>>) {
     if let Some(value) = value {
       let mut tmp = script::Builder::new();
@@ -43,13 +60,11 @@ impl Tag {
 
       if self.is_chunked() {
         for chunk in value.chunks(MAX_SCRIPT_ELEMENT_SIZE) {
-          tmp = tmp
-            .push_slice::<&script::PushBytes>(self.bytes().try_into().unwrap())
+          tmp = self.push_bytes(tmp)
             .push_slice::<&script::PushBytes>(chunk.try_into().unwrap());
         }
       } else {
-        tmp = tmp
-          .push_slice::<&script::PushBytes>(self.bytes().try_into().unwrap())
+        tmp = self.push_bytes(tmp)
           .push_slice::<&script::PushBytes>(value.as_slice().try_into().unwrap());
       }
 
