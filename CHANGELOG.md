@@ -1,6 +1,12 @@
 Changelog
 =========
 
+[0.15.0-gm10](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm10) - 2024-02-23
+------------------------------------------------------------------------------------
+
+### Added
+- Use `OP_PUSHNUM_x` instead of `OP_PUSHBYTES_1` whenever possible to save space.
+
 [0.15.0-gm9](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm9) - 2024-02-20
 ----------------------------------------------------------------------------------
 
