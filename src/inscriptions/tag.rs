@@ -37,9 +37,11 @@ impl Tag {
   }
 
   pub(crate) fn push_tag(self, tmp: script::Builder) -> script::Builder {
+    let use_single_byte_push_when_possible = false;
+
     let bytes = self.bytes();
 
-    if bytes.len() == 1 && (1..17).contains(&bytes[0]) {
+    if use_single_byte_push_when_possible && bytes.len() == 1 && (1..17).contains(&bytes[0]) {
       // if it's a single byte between 1 and 16, use a PUSHNUM opcode
       tmp.push_opcode(
         match bytes[0] {
