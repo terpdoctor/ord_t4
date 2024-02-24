@@ -36,10 +36,11 @@ impl Tag {
     }
   }
 
-  pub(crate) fn push_bytes(self, tmp: script::Builder) -> script::Builder {
-    // if it's a single byte between 1 and 16, use a PUSHNUM opcode
+  pub(crate) fn push_tag(self, tmp: script::Builder) -> script::Builder {
     let bytes = self.bytes();
+
     if bytes.len() == 1 && (1..17).contains(&bytes[0]) {
+      // if it's a single byte between 1 and 16, use a PUSHNUM opcode
       tmp.push_opcode(
         match bytes[0] {
            1 => opcodes::all::OP_PUSHNUM_1,   2 => opcodes::all::OP_PUSHNUM_2,   3 => opcodes::all::OP_PUSHNUM_3,   4 => opcodes::all::OP_PUSHNUM_4,
@@ -49,6 +50,7 @@ impl Tag {
            _ => panic!("unreachable"),
         })
     } else {
+      // otherwise use a PUSHBYTES opcode
       tmp.push_slice::<&script::PushBytes>(bytes.try_into().unwrap())
     }
   }
@@ -60,11 +62,11 @@ impl Tag {
 
       if self.is_chunked() {
         for chunk in value.chunks(MAX_SCRIPT_ELEMENT_SIZE) {
-          tmp = self.push_bytes(tmp)
+          tmp = self.push_tag(tmp)
             .push_slice::<&script::PushBytes>(chunk.try_into().unwrap());
         }
       } else {
-        tmp = self.push_bytes(tmp)
+        tmp = self.push_tag(tmp)
           .push_slice::<&script::PushBytes>(value.as_slice().try_into().unwrap());
       }
 
