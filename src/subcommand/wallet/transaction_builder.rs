@@ -46,6 +46,7 @@ pub enum Error {
   NotEnoughCardinalUtxos,
   NotInWallet(SatPoint),
   OutOfRange(SatPoint, u64),
+  OutputNotInWallet(OutPoint),
   UtxoContainsAdditionalInscription {
     outgoing_satpoint: SatPoint,
     inscribed_satpoint: SatPoint,
@@ -72,6 +73,7 @@ impl fmt::Display for Error {
       } => write!(f, "output value is below dust value: {output_value} < {dust_value}"),
       Error::NotInWallet(outgoing_satpoint) => write!(f, "outgoing satpoint {outgoing_satpoint} not in wallet"),
       Error::OutOfRange(outgoing_satpoint, maximum) => write!(f, "outgoing satpoint {outgoing_satpoint} offset higher than maximum {maximum}"),
+      Error::OutputNotInWallet(outpoint) => write!(f, "outpoint {outpoint} not in wallet"),
       Error::NotEnoughCardinalUtxos => write!(
         f,
         "wallet does not contain enough cardinal UTXOs, please add additional funds to wallet."
@@ -220,7 +222,13 @@ impl TransactionBuilder {
     }
     }
 
-    let mut amount = self.outgoing.iter().map(|outgoing| self.amounts[&outgoing.outpoint]).sum::<Amount>();
+    let mut amount = Amount::from_sat(0);
+    for outgoing in &self.outgoing {
+      amount += match self.amounts.get(&outgoing.outpoint) {
+        Some(amount) => *amount,
+        None => return Err(Error::NotInWallet(*outgoing)),
+      }
+    }
 
     if self.outgoing[0].offset >= amount.to_sat() {
       return Err(Error::OutOfRange(self.outgoing[0], amount.to_sat() - 1));
@@ -233,7 +241,10 @@ impl TransactionBuilder {
 
     for input in &self.force_input {
       self.inputs.push(*input);
-      amount += *self.amounts.get(&input).unwrap();
+      amount += match self.amounts.get(&input) {
+        Some(amount) => *amount,
+        None => return Err(Error::OutputNotInWallet(*input)),
+      };
       self.utxos.remove(&input);
     }
     self.outputs.push((self.recipient.clone(), amount));
