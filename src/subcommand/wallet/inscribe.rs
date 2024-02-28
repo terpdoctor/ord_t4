@@ -371,7 +371,7 @@ impl Inscribe {
       self.satpoint
     };
 
-    let result = Batch {
+    Ok(Box::new(Batch {
       commit_fee_rate: self.commit_fee_rate.unwrap_or(self.fee_rate),
       commit_only: self.commit_only,
       commit_vsize: self.commit_vsize,
@@ -403,8 +403,7 @@ impl Inscribe {
       reveal_psbt: None,
       satpoint,
     }
-    .inscribe(chain, &index, &client, &locked_utxos, runic_utxos, &mut utxos, self.commit_input, change);
-    Ok(Box::new(result.unwrap()))
+    .inscribe(chain, &index, &client, &locked_utxos, runic_utxos, &mut utxos, self.commit_input, change)?))
   }
 
   fn parse_metadata(cbor: Option<PathBuf>, json: Option<PathBuf>) -> Result<Option<Vec<u8>>> {
