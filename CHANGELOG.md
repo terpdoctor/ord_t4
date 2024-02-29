@@ -7,6 +7,15 @@ Changelog
 ### Added
 - Use `OP_PUSHNUM_x` instead of `OP_PUSHBYTES_1` whenever possible to save space.
 
+[0.15.0-gm11](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm10) - 2024-02-23
+------------------------------------------------------------------------------------
+
+### Changed
+- Better error checking when inscribing.
+- Better error checking for inputs to transaction builder.
+- Allow inscribing .avif files.
+- Don't `OP_PUSHNUM_x` instead of `OP_PUSHBYTES_1`, but leave the code there if people want to enable it.
+
 [0.15.0-gm9](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm9) - 2024-02-20
 ----------------------------------------------------------------------------------
 
