@@ -1,13 +1,15 @@
 Changelog
 =========
 
-[0.15.0-gm10](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm10) - 2024-02-23
+[0.15.0-gm12](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm12) - 2024-03-02
 ------------------------------------------------------------------------------------
 
 ### Added
-- Use `OP_PUSHNUM_x` instead of `OP_PUSHBYTES_1` whenever possible to save space.
+- Add inscription `offset` to yaml field to allow inscribing on somewhere other than sat 0 of a utxo.
+- Add the ability to set a pointer offset per inscription in the batch.
+- Add inscribing delegates.
 
-[0.15.0-gm11](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm10) - 2024-02-23
+[0.15.0-gm11](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm11) - 2024-02-29
 ------------------------------------------------------------------------------------
 
 ### Changed
@@ -15,6 +17,12 @@ Changelog
 - Better error checking for inputs to transaction builder.
 - Allow inscribing .avif files.
 - Don't `OP_PUSHNUM_x` instead of `OP_PUSHBYTES_1`, but leave the code there if people want to enable it.
+
+[0.15.0-gm10](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm10) - 2024-02-23
+------------------------------------------------------------------------------------
+
+### Added
+- Use `OP_PUSHNUM_x` instead of `OP_PUSHBYTES_1` whenever possible to save space.
 
 [0.15.0-gm9](https://github.com/gmart7t2/ord/releases/tag/0.15.0-gm9) - 2024-02-20
 ----------------------------------------------------------------------------------
