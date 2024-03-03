@@ -26,6 +26,7 @@ pub struct Inscription {
   pub metaprotocol: Option<Vec<u8>>,
   pub parent: Option<Vec<u8>>,
   pub pointer: Option<Vec<u8>>,
+  pub skip_pointer: bool,
   pub unrecognized_even_field: bool,
   pub utxo: Option<OutPoint>,
 }
@@ -49,9 +50,24 @@ impl Inscription {
     metaprotocol: Option<String>,
     metadata: Option<Vec<u8>>,
     compress: bool,
+    skip_pointer_for_none: bool,
     utxo: Option<OutPoint>,
   ) -> Result<Self, Error> {
     let path = path.as_ref();
+
+    if path == PathBuf::from("none") {
+      return Ok(Self {
+        body: None,
+        content_type: None,
+        content_encoding: None,
+        metadata,
+        metaprotocol: metaprotocol.map(|metaprotocol| metaprotocol.into_bytes()),
+        parent: parent.map(|id| id.value()),
+        pointer: pointer.map(Self::pointer_value),
+        skip_pointer: skip_pointer_for_none,
+        ..Default::default()
+      });
+    }
 
     let body = fs::read(path).with_context(|| format!("io error reading {}", path.display()))?;
 
@@ -109,6 +125,7 @@ impl Inscription {
       metaprotocol: metaprotocol.map(|metaprotocol| metaprotocol.into_bytes()),
       parent: parent.map(|id| id.value()),
       pointer: pointer.map(Self::pointer_value),
+      skip_pointer: false,
       utxo,
       ..Default::default()
     })
@@ -140,7 +157,9 @@ impl Inscription {
     Tag::Metaprotocol.encode(&mut builder, &self.metaprotocol);
     Tag::Parent.encode(&mut builder, &self.parent);
     Tag::Delegate.encode(&mut builder, &self.delegate);
-    Tag::Pointer.encode(&mut builder, &self.pointer);
+    if !self.skip_pointer {
+      Tag::Pointer.encode(&mut builder, &self.pointer);
+    }
     Tag::Metadata.encode(&mut builder, &self.metadata);
 
     if self.delegate.is_none() {

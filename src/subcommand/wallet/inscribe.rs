@@ -171,6 +171,8 @@ pub(crate) struct Inscribe {
   pub(crate) no_wallet: bool,
   #[arg(long, help = "Specify the vsize of the commit tx, for when we don't have a local wallet to sign with.")]
   pub(crate) commit_vsize: Option<u64>,
+  #[arg(long, help = "Whether to omit pointer from the envelope of blank inscriptions.")]
+  pub(crate) skip_pointer_for_none: bool,
 }
 
 impl Inscribe {
@@ -275,6 +277,7 @@ impl Inscribe {
         self.metaprotocol.clone(),
         metadata.clone(),
         self.compress,
+        self.skip_pointer_for_none,
         None,
       )?]
     } else if self.next_batch.is_some() {
@@ -292,6 +295,7 @@ impl Inscribe {
         metadata.clone(),
         postage,
         self.compress,
+        self.skip_pointer_for_none,
         &mut utxos,
       )?.0
     } else {
@@ -313,6 +317,7 @@ impl Inscribe {
           self.metaprotocol.clone(),
           metadata.clone(),
           self.compress,
+          self.skip_pointer_for_none,
           None,
         )?];
 
@@ -345,6 +350,7 @@ impl Inscribe {
           metadata,
           postage,
           self.compress,
+          self.skip_pointer_for_none,
           &mut utxos,
         )?;
 
@@ -664,6 +670,7 @@ impl Inscribe {
         metadata: None,
         metadata_json: metadata,
         metaprotocol: None,
+        pointer: None,
         utxo: Some(utxo),
       });
     }
@@ -724,6 +731,7 @@ impl Inscribe {
           None,
           Amount::from_sat(0),
           compress,
+          false,
           &mut utxos,
         )?;
         next_inscriptions = Vec::new();

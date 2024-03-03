@@ -1031,6 +1031,7 @@ pub(crate) struct BatchEntry {
   pub(crate) metadata: Option<serde_yaml::Value>,
   pub(crate) metadata_json: Option<serde_json::Value>,
   pub(crate) metaprotocol: Option<String>,
+  pub(crate) pointer: Option<u64>,
   pub(crate) utxo: Option<OutPoint>,
 }
 
@@ -1085,6 +1086,7 @@ impl Batchfile {
     metadata: Option<Vec<u8>>,
     postage: Amount,
     compress: bool,
+    skip_pointer_for_none: bool,
     utxos: &mut BTreeMap<OutPoint, Amount>,
   ) -> Result<(Vec<Inscription>, Vec<Address>, bool, Vec<OutPoint>)> {
     assert!(!self.inscriptions.is_empty());
@@ -1142,13 +1144,17 @@ impl Batchfile {
         entry.delegate,
         &entry.file,
         self.parent,
-        if i == 0 { None } else { Some(pointer) },
+        match entry.pointer {
+          Some(pointer) => Some(pointer),
+          None => if i == 0 { None } else { Some(pointer) },
+        },
         entry.metaprotocol.clone(),
         match &metadata {
           Some(metadata) => Some(metadata.clone()),
           None => entry.metadata()?,
         },
         compress,
+        skip_pointer_for_none,
         entry.utxo,
       )?);
 
