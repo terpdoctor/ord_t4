@@ -42,6 +42,7 @@ impl Inscription {
 
   pub(crate) fn from_file(
     chain: Chain,
+    delegate: Option<InscriptionId>,
     path: impl AsRef<Path>,
     parent: Option<InscriptionId>,
     pointer: Option<u64>,
@@ -103,6 +104,7 @@ impl Inscription {
       body: Some(body),
       content_type: Some(content_type.into()),
       content_encoding,
+      delegate: delegate.map(|id| id.value()),
       metadata,
       metaprotocol: metaprotocol.map(|metaprotocol| metaprotocol.into_bytes()),
       parent: parent.map(|id| id.value()),
@@ -131,19 +133,23 @@ impl Inscription {
       .push_opcode(opcodes::all::OP_IF)
       .push_slice(envelope::PROTOCOL_ID);
 
+    if self.delegate.is_none() {
     Tag::ContentType.encode(&mut builder, &self.content_type);
     Tag::ContentEncoding.encode(&mut builder, &self.content_encoding);
+    }
     Tag::Metaprotocol.encode(&mut builder, &self.metaprotocol);
     Tag::Parent.encode(&mut builder, &self.parent);
     Tag::Delegate.encode(&mut builder, &self.delegate);
     Tag::Pointer.encode(&mut builder, &self.pointer);
     Tag::Metadata.encode(&mut builder, &self.metadata);
 
+    if self.delegate.is_none() {
     if let Some(body) = &self.body {
       builder = builder.push_slice(envelope::BODY_TAG);
       for chunk in body.chunks(MAX_SCRIPT_ELEMENT_SIZE) {
         builder = builder.push_slice(PushBytesBuf::try_from(chunk.to_vec()).unwrap());
       }
+    }
     }
 
     builder.push_opcode(opcodes::all::OP_ENDIF)

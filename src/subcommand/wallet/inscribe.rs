@@ -268,6 +268,7 @@ impl Inscribe {
     let next_inscriptions = if self.next_file.is_some() {
       vec![Inscription::from_file(
         chain,
+        None,
         self.next_file.unwrap(),
         self.parent,
         None,
@@ -305,6 +306,7 @@ impl Inscribe {
 
         inscriptions = vec![Inscription::from_file(
           chain,
+          None,
           file,
           self.parent,
           None,
@@ -656,6 +658,7 @@ impl Inscribe {
        */
 
       entries.push(BatchEntry {
+        delegate: None,
         destination: Some(destination),
         file: tmpfile.into(),
         metadata: None,
