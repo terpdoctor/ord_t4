@@ -1031,6 +1031,7 @@ pub(crate) struct BatchEntry {
   pub(crate) metadata: Option<serde_yaml::Value>,
   pub(crate) metadata_json: Option<serde_json::Value>,
   pub(crate) metaprotocol: Option<String>,
+  pub(crate) offset: Option<u64>,
   pub(crate) pointer: Option<u64>,
   pub(crate) utxo: Option<OutPoint>,
 }
@@ -1139,6 +1140,9 @@ impl Batchfile {
 
     let mut inscriptions = Vec::new();
     for (i, entry) in self.inscriptions.iter().enumerate() {
+      if entry.offset.is_some() && entry.pointer.is_some() {
+        return Err(anyhow!("you can't specify `offset` and `pointer` for the same inscription (inscription {i})"));
+      }
       inscriptions.push(Inscription::from_file(
         chain,
         entry.delegate,
@@ -1146,7 +1150,10 @@ impl Batchfile {
         self.parent,
         match entry.pointer {
           Some(pointer) => Some(pointer),
-          None => if i == 0 { None } else { Some(pointer) },
+          None => match entry.offset {
+            Some(offset) => Some(pointer + offset),
+            None => if i == 0 { None } else { Some(pointer) },
+          },
         },
         entry.metaprotocol.clone(),
         match &metadata {

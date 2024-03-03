@@ -670,6 +670,7 @@ impl Inscribe {
         metadata: None,
         metadata_json: metadata,
         metaprotocol: None,
+        offset: None,
         pointer: None,
         utxo: Some(utxo),
       });
